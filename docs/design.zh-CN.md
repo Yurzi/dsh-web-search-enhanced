@@ -6,7 +6,7 @@ DSH 的模型侧 <code>web_search</code> 并不直接绑定某个 HTTP 协议。
 
 本插件必须支持三种协议切换、上游内置搜索标识符和最大输出 Token 配置、Web Profile 可视化编辑，以及统一的 <code>WebSearchResult</code>。为使协议可实际调用，还必须配置 <code>baseURL</code>、<code>model</code> 和 <code>apiKeyEnv</code>。<code>maxUses</code>、<code>apiVersion</code> 与 <code>searchContextSize</code> 是协议适配需要的窄扩展字段。
 
-插件不自动读取 <code>llm-pi-ai</code> 私有配置，也不假设搜索模型必须等于会话模型；显式搜索路由更容易验证、审计和独立升级。非目标包括重新注册模型侧工具、通用函数工具执行、自动协议 fallback、浏览器写入明文 API Key，以及修改 deepseek-harness 源码。
+插件在 <code>current-session</code> 模式下读取当前 Agent 的模型选择与 <code>llm-pi-ai</code> 路由配置，跟随模型、Provider、调用协议、接口地址和凭据；无法解析时使用固定配置及 <code>fallbackModel</code>。非目标包括重新注册模型侧工具、通用函数工具执行、浏览器写入 settings document 明文 API Key，以及修改 deepseek-harness 源码。
 
 ## 2. 组件与数据流
 
@@ -67,7 +67,8 @@ Parser 不从自然语言伪造来源。Anthropic 或 Responses 没有服务端�
 - parser 测试覆盖引用合并、去重与缺少 search-call 失败；
 - provider 测试覆盖重定向策略、取消、缺少凭据、HTTP 错误与成功归一化；
 - settings 测试覆盖默认值、非法字段与动态协议更新；
-- Client helper 测试覆盖 draft、输入校验与双语字典；
+- Client helper 测试覆盖 draft、输入校验、凭据引用默认值与双语字典；
+- 跟随模式测试覆盖当前模型、三种协议、路由凭据、fallbackModel 与预算字段；
 - 发布验证检查 Host ESM、Client bundle、类型声明、协议子路径与 Cordis patch。
 
 ## 8. 已知风险与后续工作
@@ -75,4 +76,4 @@ Parser 不从自然语言伪造来源。Anthropic 或 Responses 没有服务端�
 1. DSH 当前没有外部插件可注册的持久化 SessionEvent catalog。参考插件 <code>dsh-web-search-responses</code> 也不记录其辅助 Responses 请求。本插件不会伪造现有 DeepSeek 专用事件，也不会写出 Host 无法恢复的未知事件；因此实际 endpoint、model 与完整协议 body 不可由 session log 重建。严格执行辅助模型请求可重放的部署不能使用本 standalone 插件。
 2. OpenAI-compatible 网关可能只实现部分官方字段。Adapter 保持严格，不做静默 fallback。
 3. Responses 的完整 <code>action.sources</code> 可能要求提供方支持显式 include；message annotations 仍可提供引用。应在确认目标网关后再增加兼容开关。
-4. API Key 设置 UI 暂不提供。凭据由 <code>ctx.credentials</code>、Host launch environment 或受保护 composition 管理，避免普通 settings document 回显秘密。
+4. API Key 设置 UI 通过 <code>ctx.remote.credentials.set()</code> 写入 Harness credentials；输入框只持有待写入值，成功后清空，普通 settings document 不保存密钥。

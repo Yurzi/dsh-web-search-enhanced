@@ -4,7 +4,9 @@
 
 ## 功能
 
-- 通过 <code>protocol</code> 切换三种非流式 HTTP 协议；
+- 通过 <code>modelMode</code> 选择固定搜索路由，或跟随当前会话模型及其调用协议；
+- 跟随模式无法解析当前路由时，使用可配置的 <code>fallbackModel</code>；
+- 通过 <code>protocol</code> 切换固定/兜底路由的三种非流式 HTTP 协议；
 - 通过 <code>toolIdentifier</code> 覆盖上游内置搜索标识符；
 - 通过 <code>maxTokens</code> 配置 <code>max_tokens</code> 或 <code>max_output_tokens</code>；
 - 将三种响应中的来源与引用归一化为 DSH <code>WebSearchResult</code>；
@@ -26,28 +28,32 @@ dsh plugin --profile web add /path/to/dsh-web-search-enhanced
 ~~~yaml
 - id: web-search-enhanced
   config:
+    modelMode: configured
     protocol: anthropic-messages
     baseURL: https://api.deepseek.com/anthropic/v1
     model: deepseek-v4-flash
-    apiKeyEnv: DEEPSEEK_API_KEY
+    fallbackModel: deepseek-v4-flash
+    apiKeyEnv: WEB_SEARCH_ENHANCED_API
     maxTokens: 4096
 ~~~
 
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
-| <code>protocol</code> | <code>anthropic-messages</code> | <code>anthropic-messages</code>、<code>openai-responses</code> 或 <code>openai-chat-completions</code> |
+| <code>modelMode</code> | <code>configured</code> | <code>configured</code> 使用固定路由；<code>current-session</code> 跟随当前模型、Provider 和调用协议 |
+| <code>fallbackModel</code> | 固定 <code>model</code> | 当前 Session 路由无法解析时使用的模型 |
+| <code>protocol</code> | <code>anthropic-messages</code> | 固定/兜底路由使用的协议 |
 | <code>toolIdentifier</code> | 按协议推导 | Anthropic/Responses 的 tool type；Chat 的 vendor-options 模式为自定义选项字段名 |
 | <code>maxTokens</code> | <code>4096</code> | Anthropic/Chat 写入 <code>max_tokens</code>，Responses 写入 <code>max_output_tokens</code> |
 | <code>baseURL</code> | DeepSeek Anthropic base | 按协议追加 <code>/messages</code>、<code>/responses</code> 或 <code>/chat/completions</code> |
 | <code>model</code> | <code>deepseek-v4-flash</code> | 支持服务端网页搜索的模型 ID |
-| <code>apiKeyEnv</code> | <code>DEEPSEEK_API_KEY</code> | Host 进程读取 API Key 的环境变量名 |
+| <code>apiKeyEnv</code> | <code>WEB_SEARCH_ENHANCED_API</code> | 固定/兜底路由读取 API Key 的凭据引用；当前会话模式优先使用当前 LLM 路由引用 |
 | <code>maxUses</code> | <code>5</code> | 仅 Anthropic Messages 的 <code>max_uses</code> |
 | <code>chatSearchMode</code> | <code>search-model</code> | 官方专用搜索模型，或明确声明的 <code>vendor-options</code> 扩展 |
 | <code>searchContextSize</code> | 上游默认 | OpenAI 兼容模式可选 <code>low</code>、<code>medium</code>、<code>high</code> |
 
 <code>toolIdentifier</code> 留空时：Anthropic 使用 <code>web_search_20250305</code>；Responses 使用 <code>web_search</code>；Chat 的 vendor-options 模式使用 <code>web_search_options</code>。官方 Chat Completions 只在专用搜索模型上提供联网搜索，使用固定顶层 <code>web_search_options</code> 字段，而不是 Responses 风格的 <code>tools[]</code>；只有网关明确声明自定义字段时才选择 vendor-options。
 
-配置页面不回显或写入 API Key。请通过启动环境提供 <code>apiKeyEnv</code> 指向的变量，或只在受保护的 Cordis composition 中使用 <code>apiKey</code> secret 字段。
+设置页面提供一次性 API Key 输入框。密钥通过 <code>ctx.remote.credentials.set()</code> 保存到 Harness credentials，成功后清空输入框；普通 settings document 永远不会回显密钥。
 
 ## Standalone 限制
 

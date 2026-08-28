@@ -2,6 +2,8 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
+import type {} from '@deepseek-ai/dsh-api-remotes/client'
+import type { CredentialRemote } from './SearchSettingsCard.tsx'
 import type { Context } from '@deepseek-ai/cordis'
 import { SearchSettingsCard, type SearchSettings } from './SearchSettingsCard.tsx'
 import { en, zh, type LocaleKey } from './locales.ts'
@@ -14,9 +16,9 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 
 /** Browser plugin dependencies. */
-export const inject = ['slots', 'locale', 'settingsScope']
+export const inject = ['slots', 'locale', 'settingsScope', 'remote']
 
-/** Register the localized card under Settings → Plugins → Plugin configuration. */
+/** Register the localized card under Settings -> Plugins -> Plugin configuration. */
 export function apply(ctx: Context): void {
   const t = ctx.locale.bind(LOCALE_NAMESPACE)
   ctx.effect(() => ctx.locale.register(LOCALE_NAMESPACE, { en, zh }), 'web-search-enhanced: settings dictionaries')
@@ -25,6 +27,6 @@ export function apply(ctx: Context): void {
     name: 'settings.plugin.item',
     key: SETTINGS_NAMESPACE,
     locale: LOCALE_NAMESPACE,
-    inject: () => ({ scope, t }),
+    inject: () => ({ scope, credentials: (ctx.remote as unknown as { credentials: CredentialRemote }).credentials, t }),
   }, SearchSettingsCard))
 }

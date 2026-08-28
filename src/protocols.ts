@@ -3,6 +3,8 @@ import type { WebSearchResult } from '@deepseek-ai/dsh-web'
 
 /** Upstream HTTP envelope used for one server-side web search. */
 export type SearchProtocol = 'anthropic-messages' | 'openai-responses' | 'openai-chat-completions'
+/** Select whether the search route is fixed or follows the active model. */
+export type ModelMode = 'configured' | 'current-session'
 /** Search context size accepted by OpenAI-compatible search endpoints. */
 export type SearchContextSize = 'low' | 'medium' | 'high'
 /** Chat Completions search activation: official search-model semantics or an explicit vendor extension. */
@@ -11,9 +13,11 @@ export type ChatSearchMode = 'search-model' | 'vendor-options'
 /** Fully resolved settings captured at one search operation's entry. */
 export interface ResolvedConfig {
   readonly providerId: string
+  readonly modelMode: ModelMode
   readonly protocol: SearchProtocol
   readonly baseURL: string
   readonly model: string
+  readonly fallbackModel: string | undefined
   readonly apiKey: string | undefined
   readonly apiKeyEnv: string
   readonly apiVersion: string

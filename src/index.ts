@@ -10,7 +10,7 @@ import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-sett
 import type { WebSearchProvider, WebSearchRequest, WebSearchResult } from '@deepseek-ai/dsh-web'
 import { EnhancedSearchProvider } from './provider.ts'
 import { defaultToolIdentifier } from './protocols.ts'
-import type { ChatSearchMode, ResolvedConfig, SearchContextSize, SearchProtocol } from './protocols.ts'
+import type { ChatSearchMode, ModelMode, ResolvedConfig, SearchContextSize, SearchProtocol } from './protocols.ts'
 
 /** Provider id selected by the bundled Web Profile patch. */
 export const DEFAULT_PROVIDER_ID = 'enhanced-search'
@@ -18,6 +18,8 @@ export const DEFAULT_PROVIDER_ID = 'enhanced-search'
 export const DEFAULT_BASE_URL = 'https://api.deepseek.com/anthropic/v1'
 /** Default model aligned with DSH's built-in search provider. */
 export const DEFAULT_MODEL = 'deepseek-v4-flash'
+/** Credential reference owned by this plugin's fixed and fallback routes. */
+export const DEFAULT_API_KEY_ENV = 'WEB_SEARCH_ENHANCED_API'
 /** Settings namespace paired with the plugin configuration card. */
 export const SETTINGS_NAMESPACE = settingsNamespace('web-search-enhanced')
 /** Cordis plugin name used by loader diagnostics. */
@@ -28,9 +30,11 @@ export const inject = ['web']
 /** Host configuration. Values may be overridden live from the Web Profile settings card. */
 export interface Config {
   providerId?: string
+  modelMode?: ModelMode
   protocol?: SearchProtocol
   baseURL?: string
   model?: string
+  fallbackModel?: string
   apiKey?: string
   apiKeyEnv?: string
   apiVersion?: string
@@ -44,11 +48,13 @@ export interface Config {
 /** Schema shared by composition defaults and the live settings section. */
 export const Config: z<Config> = z.object({
   providerId: z.string().default(DEFAULT_PROVIDER_ID),
+  modelMode: z.union(['configured', 'current-session'] as const).default('configured'),
   protocol: z.union(['anthropic-messages', 'openai-responses', 'openai-chat-completions'] as const).default('anthropic-messages'),
   baseURL: z.string().default(DEFAULT_BASE_URL),
   model: z.string().default(DEFAULT_MODEL),
+  fallbackModel: z.string(),
   apiKey: z.string().role('secret'),
-  apiKeyEnv: z.string().role('credential-ref').default('DEEPSEEK_API_KEY'),
+  apiKeyEnv: z.string().role('credential-ref').default(DEFAULT_API_KEY_ENV),
   apiVersion: z.string().default('2023-06-01'),
   toolIdentifier: z.string(),
   maxTokens: z.number().step(1).min(1).default(4096),
@@ -57,16 +63,19 @@ export const Config: z<Config> = z.object({
   searchContextSize: z.union(['low', 'medium', 'high'] as const),
 })
 
-/** Resolve and validate all deployment choices before one provider operation. */
+/** Resolve and validate one fixed/fallback route. */
 export function resolveConfig(config: Config): ResolvedConfig {
   const protocol = config.protocol ?? 'anthropic-messages'
+  const model = config.model ?? DEFAULT_MODEL
   const resolved: ResolvedConfig = {
     providerId: config.providerId ?? DEFAULT_PROVIDER_ID,
+    modelMode: config.modelMode ?? 'configured',
     protocol,
     baseURL: config.baseURL ?? DEFAULT_BASE_URL,
-    model: config.model ?? DEFAULT_MODEL,
+    model,
+    fallbackModel: config.fallbackModel?.trim() || undefined,
     apiKey: config.apiKey,
-    apiKeyEnv: config.apiKeyEnv ?? 'DEEPSEEK_API_KEY',
+    apiKeyEnv: config.apiKeyEnv ?? DEFAULT_API_KEY_ENV,
     apiVersion: config.apiVersion ?? '2023-06-01',
     toolIdentifier: config.toolIdentifier?.trim() || defaultToolIdentifier(protocol),
     maxTokens: config.maxTokens ?? 4096,
@@ -76,6 +85,83 @@ export function resolveConfig(config: Config): ResolvedConfig {
   }
   assertResolvedConfig(resolved)
   return resolved
+}
+
+interface AgentSelection { provider?: string; model?: string }
+interface Initiator { options?: AgentSelection }
+interface AgentsService { currentInitiator?: () => Initiator | undefined }
+interface DefaultModelService { currentSelection?: () => AgentSelection | undefined }
+interface SettingsService { get: (namespace: string) => unknown }
+interface LlmService { resolveModelInfo?: (provider: string, model: string) => Promise<{ api?: string } | undefined> }
+interface RouteProfile { api?: string; baseURL?: string; apiKeyEnv?: string }
+interface LlmSettings { providers?: Record<string, RouteProfile | undefined> }
+
+function contextService<T>(ctx: Context, name: string): T | undefined {
+  try {
+    const direct = (ctx as unknown as Record<string, unknown>)[name]
+    if (direct !== undefined) return direct as T
+  } catch {
+    // Optional services may throw before they are registered.
+  }
+  return typeof ctx.get === 'function' ? ctx.get(name) as T | undefined : undefined
+}
+
+function currentSelection(ctx: Context): AgentSelection | undefined {
+  const initiator = contextService<AgentsService>(ctx, 'agents')?.currentInitiator?.()
+  if (initiator?.options?.provider && initiator.options.model) return initiator.options
+  return contextService<DefaultModelService>(ctx, 'agentDefaultModel')?.currentSelection?.()
+}
+
+function routeProfile(ctx: Context, provider: string): RouteProfile | undefined {
+  const settings = contextService<SettingsService>(ctx, 'settings')
+  const value = settings?.get('llm-pi-ai') as LlmSettings | undefined
+  return value?.providers?.[provider]
+}
+
+function searchProtocolOf(api: unknown): SearchProtocol | undefined {
+  switch (api) {
+    case 'anthropic-messages': return 'anthropic-messages'
+    case 'openai-responses': return 'openai-responses'
+    case 'openai-completions':
+    case 'openai-chat-completions': return 'openai-chat-completions'
+    default: return undefined
+  }
+}
+
+/**
+ * Resolve the current Session route at search time. The fixed route is also the
+ * fallback route, so a configured fallback remains useful outside an Agent turn.
+ */
+export async function resolveRuntimeConfig(ctx: Context, config: Config): Promise<ResolvedConfig> {
+  const requestedMode = config.modelMode ?? 'configured'
+  const fixed = resolveConfig({ ...config, modelMode: 'configured' })
+  const fallback = fixed.fallbackModel === undefined
+    ? fixed
+    : resolveConfig({ ...config, modelMode: 'configured', model: fixed.fallbackModel })
+  if (requestedMode === 'configured') return fixed
+
+  const selection = currentSelection(ctx)
+  if (!selection?.provider || !selection.model) return fallback
+  const route = routeProfile(ctx, selection.provider)
+  const llm = contextService<LlmService>(ctx, 'llm')
+  let modelInfo: { api?: string } | undefined
+  try {
+    modelInfo = await llm?.resolveModelInfo?.(selection.provider, selection.model)
+  } catch {
+    return fallback
+  }
+  const protocol = searchProtocolOf(modelInfo?.api ?? route?.api)
+  if (protocol === undefined || route?.baseURL === undefined || route.baseURL.length === 0) return fallback
+
+  const { apiKey: _literalApiKey, ...withoutLiteralKey } = config
+  return resolveConfig({
+    ...withoutLiteralKey,
+    modelMode: 'configured',
+    model: selection.model,
+    protocol,
+    baseURL: route.baseURL,
+    apiKeyEnv: route.apiKeyEnv ?? fixed.apiKeyEnv,
+  })
 }
 
 /** Construct a fixed-config provider for tests or custom compositions. */
@@ -104,15 +190,16 @@ export function apply(ctx: Context, config: Config): void {
       try { resolveConfig(current()); return true } catch { return false }
     },
     search: async (request: WebSearchRequest, signal?: AbortSignal): Promise<WebSearchResult> => {
+      const resolved = await resolveRuntimeConfig(ctx, current())
       return await new EnhancedSearchProvider(
-        () => resolveConfig(current()),
+        () => resolved,
         globalThis.fetch,
-        async (resolved) => {
-          if (resolved.apiKey !== undefined && resolved.apiKey.length > 0) return resolved.apiKey
-          const ref = credentialRef(resolved.apiKeyEnv)
+        async (runtime) => {
+          if (runtime.apiKey !== undefined && runtime.apiKey.length > 0) return runtime.apiKey
+          const ref = credentialRef(runtime.apiKeyEnv)
           const credentials = ctx.get('credentials')
           if (credentials !== undefined) return (await credentials.resolve(ref))?.value
-          return launchEnvironmentOf(ctx).get(resolved.apiKeyEnv)?.value
+          return launchEnvironmentOf(ctx).get(runtime.apiKeyEnv)?.value
         },
       ).search(request, signal)
     },
@@ -131,7 +218,8 @@ function assertResolvedConfig(config: ResolvedConfig): void {
     throw new Error('dsh-web-search-enhanced: baseURL must not contain credentials, query parameters, or a fragment')
   }
   if (config.model.trim().length === 0) throw new Error('dsh-web-search-enhanced: model must not be blank')
-  if (config.apiKeyEnv.trim().length === 0) throw new Error('dsh-web-search-enhanced: apiKeyEnv must not be blank')
+  if (config.fallbackModel !== undefined && config.fallbackModel.trim().length === 0) throw new Error('dsh-web-search-enhanced: fallbackModel must not be blank when provided')
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/u.test(config.apiKeyEnv)) throw new Error('dsh-web-search-enhanced: apiKeyEnv must be a valid credential reference')
   if (config.apiVersion.trim().length === 0) throw new Error('dsh-web-search-enhanced: apiVersion must not be blank')
   if (!/^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/u.test(config.toolIdentifier)) {
     throw new Error('dsh-web-search-enhanced: toolIdentifier must be 1-128 identifier characters and start with a letter')
@@ -141,4 +229,4 @@ function assertResolvedConfig(config: ResolvedConfig): void {
 }
 
 export { EnhancedSearchProvider } from './provider.ts'
-export type { ChatSearchMode, ResolvedConfig, SearchContextSize, SearchProtocol } from './protocols.ts'
+export type { ChatSearchMode, ModelMode, ResolvedConfig, SearchContextSize, SearchProtocol } from './protocols.ts'

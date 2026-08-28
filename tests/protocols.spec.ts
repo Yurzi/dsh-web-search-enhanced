@@ -3,7 +3,7 @@ import { buildWireRequest, parseAnthropicResponse, parseChatCompletionsResponse,
 import type { ResolvedConfig, SearchProtocol } from '../src/protocols.ts'
 
 function config(protocol: SearchProtocol, toolIdentifier: string): ResolvedConfig {
-  return { providerId: 'enhanced-search', protocol, baseURL: 'https://api.example/v1/', model: 'search-model', apiKey: undefined, apiKeyEnv: 'KEY', apiVersion: '2023-06-01', toolIdentifier, maxTokens: 1234, maxUses: 7, chatSearchMode: 'search-model', searchContextSize: 'high' }
+  return { providerId: 'enhanced-search', modelMode: 'configured', protocol, baseURL: 'https://api.example/v1/', model: 'search-model', fallbackModel: undefined, apiKey: undefined, apiKeyEnv: 'KEY', apiVersion: '2023-06-01', toolIdentifier, maxTokens: 1234, maxUses: 7, chatSearchMode: 'search-model', searchContextSize: 'high' }
 }
 
 describe('protocol request adapters', () => {
