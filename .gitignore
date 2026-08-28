@@ -1,0 +1,8 @@
+node_modules/
+lib/
+coverage/
+*.tgz
+.DS_Store
+.xdg/
+.pnpm-home/
+.dsh-smoke-home/

@@ -1,0 +1,18 @@
+# Select the enhanced provider for DSH's stable model-facing web_search tool.
+# The WebRuntime row is replaced as a whole, so keep both selectors here.
+- id: web
+  config:
+    searchProvider: enhanced-search
+    fetchProvider: http
+
+# Avoid registering two implementations under separate selectable ids by default.
+- id: web-search-deepseek
+  disabled: true
+
+- insert:
+    - id: web-search-enhanced
+      name: dsh-web-search-enhanced
+      config:
+        protocol: anthropic-messages
+        apiKeyEnv: DEEPSEEK_API_KEY
+        maxTokens: 4096
