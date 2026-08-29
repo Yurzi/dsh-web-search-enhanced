@@ -54,7 +54,7 @@ export function defaultToolIdentifier(protocol: SearchProtocol): string {
 /** Build one protocol request from resolved settings and a model-facing search query. */
 export function buildWireRequest(config: ResolvedConfig, query: string, apiKey: string): WireRequest {
   const prompt = `Perform a web search for the query: ${query}`
-  const commonHeaders = { 'accept': 'application/json', 'content-type': 'application/json', 'user-agent': 'dsh-web-search-enhanced/0.1.0' }
+  const commonHeaders = { 'accept': 'application/json', 'content-type': 'application/json', 'user-agent': 'dsh-web-search-enhanced/0.0.1' }
   switch (config.protocol) {
     case 'anthropic-messages': return {
       endpoint: appendEndpoint(config.baseURL, ENDPOINT_SUFFIX[config.protocol]),
