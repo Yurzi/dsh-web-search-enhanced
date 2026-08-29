@@ -1,7 +1,10 @@
 import type { SettingsScope } from '@deepseek-ai/dsh-client-runtime/client'
+interface CredentialRemoteFailure { ok: false; error: { message: string } }
+interface CredentialRemoteSuccess<T> { ok: true; value: T }
+type CredentialRemoteResult<T> = CredentialRemoteSuccess<T> | CredentialRemoteFailure
 export interface CredentialRemote {
-  describe: (refs: string[]) => Promise<Record<string, { configured: boolean }>>
-  set: (ref: string, value: string) => Promise<void>
+  describe: (refs: string[]) => Promise<CredentialRemoteResult<Record<string, { configured: boolean; writable?: boolean }>>>
+  set: (ref: string, value: string) => Promise<CredentialRemoteResult<unknown>>
 }
 import { useEffect, useId, useMemo, useState, useSyncExternalStore } from 'react'
 import type { LocaleKey } from './locales.ts'
@@ -51,7 +54,8 @@ export function draftFrom(value: SearchSettings | undefined): Draft {
 export async function saveCredential(credentials: CredentialRemote, ref: string, value: string): Promise<boolean> {
   const secret = value.trim()
   if (secret.length === 0) return false
-  await credentials.set(ref.trim(), secret)
+  const result = await credentials.set(ref.trim(), secret)
+  if (!result.ok) throw new Error(result.error.message)
   return true
 }
 
@@ -90,8 +94,8 @@ export function SearchSettingsCard({ scope, credentials, t }: SearchSettingsCard
     const ref = draft.apiKeyEnv.trim()
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/u.test(ref)) { setCredentialConfigured(false); return }
     let active = true
-    void credentials.describe([ref]).then(info => {
-      if (active) setCredentialConfigured(info[ref]?.configured === true)
+    void credentials.describe([ref]).then(result => {
+      if (active) setCredentialConfigured(result.ok && result.value[ref]?.configured === true)
     }).catch(() => { if (active) setCredentialConfigured(false) })
     return () => { active = false }
   }, [credentials, draft.apiKeyEnv])

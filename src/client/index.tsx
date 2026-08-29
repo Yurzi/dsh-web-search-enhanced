@@ -16,7 +16,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 
 /** Browser plugin dependencies. */
-export const inject = ['slots', 'locale', 'settingsScope', 'remote']
+export const inject = ['slots', 'locale', 'settingsScope', 'remote', 'remote.credentials']
 
 /** Register the localized card under Settings -> Plugins -> Plugin configuration. */
 export function apply(ctx: Context): void {

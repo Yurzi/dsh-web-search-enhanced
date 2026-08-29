@@ -36,6 +36,20 @@ describe('host plugin contract', () => {
       .resolves.toMatchObject({ model: 'session-model', protocol: 'openai-chat-completions', baseURL: 'https://route.example/v1', apiKeyEnv: 'ROUTE_API', maxTokens: 4096 })
   })
 
+  it('follows the model recorded for the current Session request', async () => {
+    const services = {
+      agents: { currentInitiator: () => ({
+        options: { provider: 'stale', model: 'initial-model' },
+        session: { requestHeader: () => ({ config: { provider: 'live', model: 'selected-model' } }) },
+      }) },
+      settings: { get: () => ({ providers: { live: { api: 'anthropic-messages', baseURL: 'https://live.example/v1', apiKeyEnv: 'LIVE_API' } } }) },
+      llm: { resolveModelInfo: async () => ({}) },
+    }
+    const ctx = { get: (key: string) => services[key as keyof typeof services] } as unknown as Context
+    await expect(resolveRuntimeConfig(ctx, { modelMode: 'current-session' }))
+      .resolves.toMatchObject({ model: 'selected-model', protocol: 'anthropic-messages', baseURL: 'https://live.example/v1', apiKeyEnv: 'LIVE_API' })
+  })
+
   it('uses fallback model when the active route protocol is unavailable', async () => {
     const services = {
       agents: { currentInitiator: () => ({ options: { provider: 'route', model: 'session-model' } }) },

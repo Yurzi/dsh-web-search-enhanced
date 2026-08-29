@@ -88,7 +88,9 @@ export function resolveConfig(config: Config): ResolvedConfig {
 }
 
 interface AgentSelection { provider?: string; model?: string }
-interface Initiator { options?: AgentSelection }
+interface RequestHeader { config?: AgentSelection }
+interface AgentSession { requestHeader?: () => RequestHeader | undefined }
+interface Initiator { options?: AgentSelection; session?: AgentSession }
 interface AgentsService { currentInitiator?: () => Initiator | undefined }
 interface DefaultModelService { currentSelection?: () => AgentSelection | undefined }
 interface SettingsService { get: (namespace: string) => unknown }
@@ -108,6 +110,8 @@ function contextService<T>(ctx: Context, name: string): T | undefined {
 
 function currentSelection(ctx: Context): AgentSelection | undefined {
   const initiator = contextService<AgentsService>(ctx, 'agents')?.currentInitiator?.()
+  const requestSelection = initiator?.session?.requestHeader?.()?.config
+  if (requestSelection?.provider && requestSelection.model) return requestSelection
   if (initiator?.options?.provider && initiator.options.model) return initiator.options
   return contextService<DefaultModelService>(ctx, 'agentDefaultModel')?.currentSelection?.()
 }
