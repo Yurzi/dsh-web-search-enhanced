@@ -1,9 +1,9 @@
 # Select the enhanced provider for DSH's stable model-facing web_search tool.
-# The WebRuntime row is replaced as a whole, so keep both selectors here.
+# Leave fetchProvider unset so WebRuntime auto-selects the sole active fetch
+# provider (native http or any third-party fetch plugin like dsh-web-fetch-enhanced).
 - id: web
   config:
     searchProvider: enhanced-search
-    fetchProvider: http
 
 # Avoid registering two implementations under separate selectable ids by default.
 - id: web-search-deepseek
