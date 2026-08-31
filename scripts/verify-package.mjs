@@ -5,9 +5,16 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-const pack = JSON.parse(execFileSync('pnpm', ['pack', '--json'], { encoding: 'utf8' }))
-const tarball = pack.filename ?? pack[0]?.filename
-assert.ok(tarball, 'pnpm pack did not report a tarball')
+const env = { ...process.env, npm_config_cache: join(tmpdir(), 'npm-cache'), PNPM_HOME: join(tmpdir(), 'pnpm-home') }
+let tarball
+try {
+  const pack = JSON.parse(execFileSync('pnpm', ['pack', '--json'], { encoding: 'utf8', env }))
+  tarball = pack.filename ?? pack[0]?.filename
+} catch {
+  const pack = JSON.parse(execFileSync('npm', ['pack', '--json'], { encoding: 'utf8', env }))
+  tarball = pack.filename ?? pack[0]?.filename ?? (Object.values(pack)[0]?.filename)
+}
+assert.ok(tarball, 'pack did not report a tarball')
 const dir = mkdtempSync(join(tmpdir(), 'dsh-web-search-enhanced-'))
 try {
   execFileSync('tar', ['-xzf', tarball, '-C', dir])

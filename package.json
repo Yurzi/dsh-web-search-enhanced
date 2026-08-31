@@ -1,6 +1,6 @@
 {
   "name": "dsh-web-search-enhanced",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Multi-protocol web_search provider for DeepSeek Harness",
   "license": "MIT",
   "type": "module",
@@ -31,6 +31,7 @@
     "cordis.patch.yml",
     "docs",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "publishConfig": {

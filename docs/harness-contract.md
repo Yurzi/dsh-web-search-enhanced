@@ -2,7 +2,7 @@
 
 ## Source of truth
 
-Extracted from DeepSeek Harness commit `cd5ef8148158c3a752a658978873241fdf8e2bbc` and source package line `0.1.2-alpha.1`. Installable dependencies use the npm `next` line `0.1.1-rc.2`; source and registry baselines are intentionally recorded separately.
+Extracted from DeepSeek Harness release `0.1.2-alpha.2` (commit `3f1b46a5db`). Installable dependencies use the npm package line `>=0.1.1-rc.2`; source and registry baselines are intentionally recorded separately.
 
 Representative sources:
 

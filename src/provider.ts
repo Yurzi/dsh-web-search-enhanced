@@ -54,10 +54,11 @@ export class EnhancedSearchProvider implements WebSearchProvider {
       })
     } catch (error: unknown) {
       if (signal?.aborted === true || isAbortError(error)) throw aborted(signal, error)
-      throw new WebError(
+      throw searchEndpointError(
+        wire.endpoint,
+        config.apiKeyEnv,
         `dsh-web-search-enhanced: ${config.protocol} request failed: ${String(error)}`,
-        'WEB_PROVIDER_ERROR',
-        { cause: error },
+        error,
       )
     }
     if (!response.ok) {
@@ -66,24 +67,26 @@ export class EnhancedSearchProvider implements WebSearchProvider {
         const payload = await response.json() as unknown
         const root = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : undefined
         const error = typeof root?.error === 'object' && root.error !== null ? root.error as Record<string, unknown> : undefined
-        const candidate = error?.message ?? root?.message
-        if (typeof candidate === 'string' && candidate.length > 0) detail = candidate
+        const candidate = error?.message ?? (typeof error === 'string' ? error : undefined) ?? root?.message
+        if (typeof candidate === 'string' && candidate.length > 0) detail = `${detail}: ${candidate}`
       } catch (error: unknown) {
         if (signal?.aborted === true || isAbortError(error)) throw aborted(signal, error)
       }
-      throw new WebError(`dsh-web-search-enhanced: upstream API error (${detail})`, 'WEB_PROVIDER_ERROR')
+      throw searchEndpointError(
+        wire.endpoint,
+        config.apiKeyEnv,
+        `dsh-web-search-enhanced: upstream API error (${detail})`,
+      )
     }
     try {
       const payload = await response.json() as unknown
       return parseSearchResponse(config.protocol, payload)
     } catch (error: unknown) {
       if (signal?.aborted === true || isAbortError(error)) throw aborted(signal, error)
-      if (error instanceof WebError) throw error
-      throw new WebError(
-        `dsh-web-search-enhanced: unprocessable ${config.protocol} response: ${String(error)}`,
-        'WEB_PROVIDER_ERROR',
-        { cause: error },
-      )
+      const message = error instanceof WebError
+        ? error.message
+        : `dsh-web-search-enhanced: unprocessable ${config.protocol} response: ${String(error)}`
+      throw searchEndpointError(wire.endpoint, config.apiKeyEnv, message, error)
     }
   }
 }
@@ -99,6 +102,20 @@ async function resolveCredential(pending: Promise<string | undefined>, signal?: 
       error => { signal.removeEventListener('abort', onAbort); reject(error) },
     )
   })
+}
+
+/** Add endpoint recovery instructions to failures that occur after request dispatch begins. */
+function searchEndpointError(endpoint: string, apiKeyEnv: string, message: string, cause?: unknown): WebError {
+  return new WebError(
+    `${message}\n\nThe web search request used endpoint ${JSON.stringify(endpoint)}. `
+    + 'Search endpoint configuration is separate from chat. If that endpoint is not intended, '
+    + 'guide the user to Settings > Plugins > Plugin configuration > Web Search Enhanced, where they can '
+    + 'change and save Endpoint base URL. If that settings page is unavailable, the user can set '
+    + `${apiKeyEnv.length > 0 ? apiKeyEnv : 'WEB_SEARCH_ENHANCED_API'} or configure web-search-enhanced.baseURL to a trusted `
+    + 'search endpoint. Only the user should choose or change the endpoint.',
+    'WEB_PROVIDER_ERROR',
+    cause === undefined ? undefined : { cause },
+  )
 }
 
 function throwIfAborted(signal?: AbortSignal): void { if (signal?.aborted === true) throw aborted(signal) }

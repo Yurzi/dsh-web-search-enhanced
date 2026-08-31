@@ -6,7 +6,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import z from '@deepseek-ai/schemastery'
-import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-settings'
 import type { WebSearchProvider, WebSearchRequest, WebSearchResult } from '@deepseek-ai/dsh-web'
 import { EnhancedSearchProvider } from './provider.ts'
 import { defaultToolIdentifier } from './protocols.ts'
@@ -21,7 +21,7 @@ export const DEFAULT_MODEL = 'deepseek-v4-flash'
 /** Credential reference owned by this plugin's fixed and fallback routes. */
 export const DEFAULT_API_KEY_ENV = 'WEB_SEARCH_ENHANCED_API'
 /** Settings namespace paired with the plugin configuration card. */
-export const SETTINGS_NAMESPACE = settingsNamespace('web-search-enhanced')
+export const SETTINGS_NAMESPACE = 'web-search-enhanced'
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'web-search-enhanced'
 /** The web seam this provider contributes to. */
@@ -174,11 +174,43 @@ export function createProvider(config: Config = {}, fetcher: typeof fetch = glob
   return new EnhancedSearchProvider(() => resolved, fetcher)
 }
 
+function installPluginSettings(
+  ctx: Context,
+  ns: string,
+  schema: z<Config>,
+  entry: Config,
+  hooks: {
+    setSource: (source: () => Config) => void
+    onChange: () => void
+    validate?: (value: Config) => void
+  },
+): void {
+  ctx.inject(['settings'], (settingsCtx) => {
+    const settings = settingsCtx.settings as unknown as {
+      installSection?: (owner: Context, ns: string, schema: z<Config>, entry: Config, hooks: unknown) => void
+      register?: (ns: unknown, schema: z<Config>, options?: unknown) => { get: () => Config; watch: (cb: () => void) => () => void }
+    }
+    if (typeof settings?.installSection === 'function') {
+      settings.installSection(ctx, ns, schema, entry, hooks)
+    } else if (typeof settings?.register === 'function') {
+      const scope = settings.register(ns, schema, {
+        base: entry,
+        ...(hooks.validate === undefined ? {} : { validate: hooks.validate }),
+      })
+      hooks.setSource(() => scope.get())
+      hooks.onChange()
+      scope.watch(() => {
+        hooks.onChange()
+      })
+    }
+  })
+}
+
 /** Register the provider and its live Web Profile settings section. */
 export function apply(ctx: Context, config: Config): void {
   const providerId = resolveConfig(config).providerId
   let current: () => Config = () => config
-  installSettingsSection(ctx, SETTINGS_NAMESPACE, Config, config, {
+  installPluginSettings(ctx, SETTINGS_NAMESPACE, Config, config, {
     setSource: (source) => { current = source },
     onChange: () => {},
     validate: (value) => {

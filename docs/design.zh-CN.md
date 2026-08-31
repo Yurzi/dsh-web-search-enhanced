@@ -23,7 +23,7 @@ flowchart LR
   N --> T
 ~~~
 
-Host 入口通过 <code>installSettingsSection</code> 注册 <code>web-search-enhanced</code> namespace。每次搜索开始时只读取一次 resolved settings，保证一次调用不会混用更新前后的 endpoint、协议和 Token 上限。provider ID 在注册时固定；实时设置不能修改该字段，否则 <code>ctx.web</code> 的 provider 选择会与已注册对象不一致。
+Host 入口通过 <code>ctx.inject(['settings'], ...)</code> 注入并调用 <code>settingsCtx.settings.installSection()</code> 注册 <code>web-search-enhanced</code> namespace。每次搜索开始时只读取一次 resolved settings，保证一次调用不会混用更新前后的 endpoint、协议和 Token 上限。provider ID 在注册时固定；实时设置不能修改该字段，否则 <code>ctx.web</code> 的 provider 选择会与已注册对象不一致。
 
 Client 入口把相同 namespace 绑定到 <code>settings.plugin.item</code> keyed slot。插件配置页只在 Host 暴露 namespace 时渲染卡片，未加载 Host 插件时不会出现不可用配置项。
 

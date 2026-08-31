@@ -42,9 +42,31 @@ describe('enhanced search provider', () => {
     expect(fetcher).not.toHaveBeenCalled()
   })
 
-  it('surfaces upstream error details without following redirects', async () => {
+  it('surfaces upstream error details with endpoint recovery guidance without following redirects', async () => {
     const fetcher = vi.fn(async () => new Response(JSON.stringify({ error: { message: 'unsupported tool' } }), { status: 400 }))
     const provider = createProvider({ apiKey: 'secret' }, fetcher as unknown as typeof fetch)
-    await expect(provider.search({ query: 'q' })).rejects.toThrow('unsupported tool')
+    await expect(provider.search({ query: 'q' })).rejects.toMatchObject({
+      code: 'WEB_PROVIDER_ERROR',
+      message: expect.stringContaining('HTTP 400: unsupported tool'),
+    })
+    await expect(provider.search({ query: 'q' })).rejects.toMatchObject({
+      message: expect.stringContaining('The web search request used endpoint "https://api.deepseek.com/anthropic/v1/messages"'),
+    })
+  })
+
+  it('adds endpoint recovery instructions to network failures and unprocessable responses', async () => {
+    const networkFailFetcher = vi.fn(async () => { throw new TypeError('connection refused') })
+    const provider1 = createProvider({ apiKey: 'secret' }, networkFailFetcher as unknown as typeof fetch)
+    await expect(provider1.search({ query: 'q' })).rejects.toMatchObject({
+      code: 'WEB_PROVIDER_ERROR',
+      message: expect.stringContaining('connection refused'),
+    })
+
+    const badJsonFetcher = vi.fn(async () => new Response('not json', { status: 200, headers: { 'content-type': 'application/json' } }))
+    const provider2 = createProvider({ apiKey: 'secret' }, badJsonFetcher as unknown as typeof fetch)
+    await expect(provider2.search({ query: 'q' })).rejects.toMatchObject({
+      code: 'WEB_PROVIDER_ERROR',
+      message: expect.stringContaining('The web search request used endpoint'),
+    })
   })
 })

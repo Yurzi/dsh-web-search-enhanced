@@ -36,7 +36,7 @@ describe('Web Profile settings integration', () => {
     vi.stubGlobal('fetch', fetcher)
     const bench = await boot()
     expect(bench.ctx.settings.describe().map(row => String(row.ns))).toContain(String(plugin.SETTINGS_NAMESPACE))
-    await bench.ctx.settings.update(plugin.SETTINGS_NAMESPACE, {
+    await bench.ctx.settings.update(plugin.SETTINGS_NAMESPACE as unknown as SettingsNamespace, {
       protocol: 'openai-responses', baseURL: 'https://api.example/v1', model: 'search-model', maxTokens: 2048,
     })
     await expect(bench.ctx.web.search({ query: 'q' })).resolves.toMatchObject({ content: 'answer' })
@@ -46,7 +46,7 @@ describe('Web Profile settings integration', () => {
 
   it('rejects provider identity changes and unregisters on disposal', async () => {
     const bench = await boot()
-    await expect(bench.ctx.settings.update(plugin.SETTINGS_NAMESPACE, { providerId: 'other' }))
+    await expect(bench.ctx.settings.update(plugin.SETTINGS_NAMESPACE as unknown as SettingsNamespace, { providerId: 'other' }))
       .rejects.toThrow('providerId cannot be changed')
     await bench.pluginFiber.dispose()
     await expect(bench.ctx.web.search({ query: 'q' })).rejects.toMatchObject({ code: 'WEB_PROVIDER_CONFIGURED_MISSING' })
