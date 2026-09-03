@@ -1,6 +1,7 @@
-import type { Context } from '@deepseek-ai/cordis'
+import { Context } from '@deepseek-ai/cordis'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { describe, expect, it, vi } from 'vitest'
-import { Config, DEFAULT_API_KEY_ENV, DEFAULT_PROVIDER_ID, inject, name, resolveConfig, resolveRuntimeConfig } from '../src/index.ts'
+import { apply, Config, DEFAULT_API_KEY_ENV, DEFAULT_PROVIDER_ID, inject, name, resolveConfig, resolveRuntimeConfig } from '../src/index.ts'
 
 describe('host plugin contract', () => {
   it('exports the Cordis provider shape', () => {
@@ -71,5 +72,46 @@ describe('host plugin contract', () => {
     expect(() => resolveConfig({ baseURL: 'not-a-url' })).toThrow('baseURL')
     expect(() => resolveConfig({ maxTokens: 0 })).toThrow('maxTokens')
     expect(() => resolveConfig({ toolIdentifier: '__proto__' })).toThrow('toolIdentifier')
+  })
+
+  it('falls back to DEEPSEEK_API_KEY when WEB_SEARCH_ENHANCED_API is unset and endpoint is DeepSeek', async () => {
+    let capturedProvider: any
+    const services = {
+      web: { registerSearchProvider: (p: any) => { capturedProvider = p } },
+      settings: { installSection: () => {} },
+      credentials: {
+        resolve: vi.fn(async (ref: any) => {
+          if (ref === credentialRef('DEEPSEEK_API_KEY')) return { value: 'ds-secret-key' }
+          return undefined
+        }),
+      },
+    }
+    const ctx = {
+      web: services.web,
+      get: (key: string) => services[key as keyof typeof services],
+      inject: (_deps: string[], cb: (c: any) => void) => cb({ settings: services.settings }),
+    } as unknown as Context
+
+    apply(ctx, { protocol: 'anthropic-messages', baseURL: 'https://api.deepseek.com/anthropic/v1' })
+    expect(capturedProvider).toBeDefined()
+    expect(capturedProvider.id).toBe('enhanced-search')
+
+    const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ content: [
+      { type: 'web_search_tool_result', content: [{ type: 'web_search_result', url: 'https://deepseek.com' }] },
+    ] }), { status: 200, headers: { 'content-type': 'application/json' } }))
+    const origFetch = globalThis.fetch
+    globalThis.fetch = fetchSpy as any
+    try {
+      const res = await capturedProvider.search({ query: 'test' })
+      expect(res.sources).toEqual([{ url: 'https://deepseek.com' }])
+      expect(fetchSpy).toHaveBeenCalledWith(
+        'https://api.deepseek.com/anthropic/v1/messages',
+        expect.objectContaining({
+          headers: expect.objectContaining({ 'x-api-key': 'ds-secret-key' }),
+        }),
+      )
+    } finally {
+      globalThis.fetch = origFetch
+    }
   })
 })

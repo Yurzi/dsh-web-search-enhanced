@@ -234,8 +234,22 @@ export function apply(ctx: Context, config: Config): void {
           if (runtime.apiKey !== undefined && runtime.apiKey.length > 0) return runtime.apiKey
           const ref = credentialRef(runtime.apiKeyEnv)
           const credentials = ctx.get('credentials')
-          if (credentials !== undefined) return (await credentials.resolve(ref))?.value
-          return launchEnvironmentOf(ctx).get(runtime.apiKeyEnv)?.value
+          if (credentials !== undefined) {
+            const resolvedValue = (await credentials.resolve(ref))?.value
+            if (resolvedValue !== undefined && resolvedValue.length > 0) return resolvedValue
+          }
+          const ambient = launchEnvironmentOf(ctx).get(runtime.apiKeyEnv)?.value
+          if (ambient !== undefined && ambient.length > 0) return ambient
+          if (runtime.apiKeyEnv === DEFAULT_API_KEY_ENV && runtime.baseURL.includes('deepseek.com')) {
+            const dsRef = credentialRef('DEEPSEEK_API_KEY')
+            if (credentials !== undefined) {
+              const dsVal = (await credentials.resolve(dsRef))?.value
+              if (dsVal !== undefined && dsVal.length > 0) return dsVal
+            }
+            const dsAmbient = launchEnvironmentOf(ctx).get('DEEPSEEK_API_KEY')?.value
+            if (dsAmbient !== undefined && dsAmbient.length > 0) return dsAmbient
+          }
+          return undefined
         },
       ).search(request, signal)
     },

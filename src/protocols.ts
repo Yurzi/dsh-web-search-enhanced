@@ -54,10 +54,10 @@ export function defaultToolIdentifier(protocol: SearchProtocol): string {
 /** Build one protocol request from resolved settings and a model-facing search query. */
 export function buildWireRequest(config: ResolvedConfig, query: string, apiKey: string): WireRequest {
   const prompt = `Perform a web search for the query: ${query}`
-  const commonHeaders = { 'accept': 'application/json', 'content-type': 'application/json', 'user-agent': 'dsh-web-search-enhanced/0.0.3' }
+  const commonHeaders = { 'accept': 'application/json', 'content-type': 'application/json', 'user-agent': 'dsh-web-search-enhanced/0.0.4' }
   switch (config.protocol) {
     case 'anthropic-messages': return {
-      endpoint: appendEndpoint(config.baseURL, ENDPOINT_SUFFIX[config.protocol]),
+      endpoint: appendEndpoint(config.baseURL, config.protocol),
       headers: { ...commonHeaders, 'anthropic-version': config.apiVersion, 'authorization': `Bearer ${apiKey}`, 'x-api-key': apiKey },
       body: {
         model: config.model,
@@ -67,7 +67,7 @@ export function buildWireRequest(config: ResolvedConfig, query: string, apiKey: 
       },
     }
     case 'openai-responses': return {
-      endpoint: appendEndpoint(config.baseURL, ENDPOINT_SUFFIX[config.protocol]),
+      endpoint: appendEndpoint(config.baseURL, config.protocol),
       headers: { ...commonHeaders, authorization: `Bearer ${apiKey}` },
       body: {
         model: config.model,
@@ -88,7 +88,7 @@ export function buildWireRequest(config: ResolvedConfig, query: string, apiKey: 
       const optionsField = config.chatSearchMode === 'search-model' ? 'web_search_options' : config.toolIdentifier
       body[optionsField] = config.searchContextSize === undefined ? {} : { search_context_size: config.searchContextSize }
       return {
-        endpoint: appendEndpoint(config.baseURL, ENDPOINT_SUFFIX[config.protocol]),
+        endpoint: appendEndpoint(config.baseURL, config.protocol),
         headers: { ...commonHeaders, authorization: `Bearer ${apiKey}` },
         body,
       }
@@ -180,9 +180,15 @@ export function parseChatCompletionsResponse(payload: unknown): WebSearchResult 
   return { ...(content === undefined ? {} : { content }), sources: [...sources.values()], truncated: false }
 }
 
-function appendEndpoint(baseURL: string, suffix: string): string {
+export function appendEndpoint(baseURL: string, protocol: SearchProtocol): string {
   const trimmed = baseURL.replace(/\/+$/u, '')
-  return trimmed.toLowerCase().endsWith(suffix) ? trimmed : trimmed + suffix
+  const suffix = ENDPOINT_SUFFIX[protocol]
+  if (trimmed.toLowerCase().endsWith(suffix)) return trimmed
+  if (protocol === 'anthropic-messages') {
+    const root = trimmed.endsWith('/v1') ? trimmed.slice(0, -3) : trimmed
+    return `${root}/v1/messages`
+  }
+  return trimmed + suffix
 }
 
 type MutableSource = { url: string; title?: string; snippet?: string; publishedAt?: string }

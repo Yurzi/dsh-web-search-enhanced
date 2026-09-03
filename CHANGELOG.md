@@ -2,6 +2,16 @@
 
 All notable changes to the `dsh-web-search-enhanced` package will be documented in this file.
 
+## [0.0.4] - 2026-09-03
+
+### Changed
+- **DSH 0.1.2-rc.1 Ecosystem Compatibility**: Expanded `peerDependencies` across all `@deepseek-ai/dsh-*` packages to support `^0.1.1-rc.2 || ^0.1.2-rc.1`.
+- **RC-Only Support Policy**: Formally documented in `README.md` that the plugin exclusively supports DSH Release Candidate (RC) versions (`>= 0.1.1-rc.2`) and does not support intermediate alpha/beta/nightly snapshots.
+- **Anthropic Endpoint Normalization**: Aligned with upstream PR #3451 specifications; added automatic normalization for Anthropic Messages `baseURL` with or without trailing `/v1` (e.g., `https://api.anthropic.com` safely resolves to `/v1/messages`), preventing 404 errors on official Anthropic endpoints and compatible gateways.
+- **Out-of-the-Box Credential Fallback**: Added automatic fallback to `DEEPSEEK_API_KEY` when `apiKeyEnv` remains at default `WEB_SEARCH_ENHANCED_API` and the target endpoint is DeepSeek, enabling seamless drop-in replacement of the native search provider without redundant credential re-entry.
+- **Client Build Defines Alignment**: Updated `tsdown.config.ts` define configuration to supply the root `import.meta.env` object alongside `import.meta.env.MODE`, matching upstream preset conventions and preventing property-probe runtime errors in bundled client libraries.
+- **Egress & Compatibility Tests**: Added `tests/egress.spec.ts` and updated `tests/protocols.spec.ts` and `tests/plugin.spec.ts` to cover endpoint normalization and credential fallback behaviors.
+
 ## [0.0.3] - 2026-08-31
 
 ### Fixed

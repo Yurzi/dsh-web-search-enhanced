@@ -1,17 +1,26 @@
 import { describe, expect, it } from 'vitest'
-import { buildWireRequest, parseAnthropicResponse, parseChatCompletionsResponse, parseResponsesResponse } from '../src/protocols.ts'
+import { appendEndpoint, buildWireRequest, parseAnthropicResponse, parseChatCompletionsResponse, parseResponsesResponse } from '../src/protocols.ts'
 import type { ResolvedConfig, SearchProtocol } from '../src/protocols.ts'
 
-function config(protocol: SearchProtocol, toolIdentifier: string): ResolvedConfig {
-  return { providerId: 'enhanced-search', modelMode: 'configured', protocol, baseURL: 'https://api.example/v1/', model: 'search-model', fallbackModel: undefined, apiKey: undefined, apiKeyEnv: 'KEY', apiVersion: '2023-06-01', toolIdentifier, maxTokens: 1234, maxUses: 7, chatSearchMode: 'search-model', searchContextSize: 'high' }
+function config(protocol: SearchProtocol, toolIdentifier: string, baseURL = 'https://api.example/v1/'): ResolvedConfig {
+  return { providerId: 'enhanced-search', modelMode: 'configured', protocol, baseURL, model: 'search-model', fallbackModel: undefined, apiKey: undefined, apiKeyEnv: 'KEY', apiVersion: '2023-06-01', toolIdentifier, maxTokens: 1234, maxUses: 7, chatSearchMode: 'search-model', searchContextSize: 'high' }
 }
 
 describe('protocol request adapters', () => {
   it('builds Anthropic Messages v1 with configurable tool type and max_tokens', () => {
     const wire = buildWireRequest(config('anthropic-messages', 'web_search_20990101'), 'latest news', 'secret')
     expect(wire.endpoint).toBe('https://api.example/v1/messages')
-    expect(wire.headers).toMatchObject({ 'anthropic-version': '2023-06-01', 'x-api-key': 'secret' })
+    expect(wire.headers).toMatchObject({ 'anthropic-version': '2023-06-01', 'x-api-key': 'secret', 'user-agent': 'dsh-web-search-enhanced/0.0.4' })
     expect(wire.body).toMatchObject({ max_tokens: 1234, tools: [{ type: 'web_search_20990101', name: 'web_search', max_uses: 7 }] })
+  })
+
+  it('normalizes Anthropic baseURL root and /v1 segments correctly', () => {
+    expect(appendEndpoint('https://api.anthropic.com', 'anthropic-messages')).toBe('https://api.anthropic.com/v1/messages')
+    expect(appendEndpoint('https://api.anthropic.com/v1', 'anthropic-messages')).toBe('https://api.anthropic.com/v1/messages')
+    expect(appendEndpoint('https://api.anthropic.com/v1/', 'anthropic-messages')).toBe('https://api.anthropic.com/v1/messages')
+    expect(appendEndpoint('https://api.anthropic.com/v1/messages', 'anthropic-messages')).toBe('https://api.anthropic.com/v1/messages')
+    expect(appendEndpoint('https://api.deepseek.com/anthropic/v1', 'anthropic-messages')).toBe('https://api.deepseek.com/anthropic/v1/messages')
+    expect(appendEndpoint('https://gateway.example/tenant', 'anthropic-messages')).toBe('https://gateway.example/tenant/v1/messages')
   })
 
   it('builds OpenAI Responses with configurable tool type and max_output_tokens', () => {

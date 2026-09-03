@@ -2,7 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/dsh-web-search-enhanced.svg)](https://www.npmjs.com/package/dsh-web-search-enhanced)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![DeepSeek Harness](https://img.shields.io/badge/DeepSeek%20Harness-%3E%3D0.1.1--rc.2-blueviolet)](https://github.com/deepseek-ai/deepseek-harness)
+[![DeepSeek Harness](https://img.shields.io/badge/DeepSeek%20Harness-%3E%3D0.1.1--rc.2%20(RC%20Only)-blueviolet)](https://github.com/deepseek-ai/deepseek-harness)
 
 **dsh-web-search-enhanced** 是为 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) 量身打造的增强型多协议联网搜索插件。
 
@@ -29,6 +29,15 @@
 - 🖥️ **Web 控制台可视化配置**：深度集成 DSH Web 端「设置 → 插件 → Web Search Enhanced」，支持中英文双语、即时表单校验、草稿暂存、一键保存与重置。
 - 🔒 **凭据安全与隐私保护**：通过 DSH 原生 Credentials 机制安全写入并保管 API Key，公开设置文档绝不保存明文密钥；请求强制阻断携带凭据的恶意 HTTP 重定向。
 - 🎯 **开箱即用无感集成**：上游响应中的来源和引用会自动归一化为标准的 DSH `WebSearchResult`；主模型提示词和工作流无需任何改动。
+
+---
+
+## 📋 版本兼容与支持策略 (Compatibility & Requirements)
+
+- **最低支持的 DSH 版本**：`>= 0.1.1-rc.2`（支持 `0.1.1-rc.2`、`0.1.2-rc.1` 等）
+- **版本支持范围声明**：
+  > ⚠️ **重要声明**：**本插件仅对 DeepSeek Harness 的 Release Candidate (RC) 版本进行官方维护与兼容性支持**。
+  > 插件不提供对开发中的 Alpha / Beta / Nightly 构建版本的稳定性承诺与 API 兼容保证。在升级 DSH 或使用本插件时，请确保运行环境使用的是官方正式的 RC 发布版本。
 
 ---
 
