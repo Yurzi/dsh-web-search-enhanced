@@ -37,6 +37,14 @@
   "publishConfig": {
     "access": "public"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Yurzi/dsh-web-search-enhanced.git"
+  },
+  "homepage": "https://github.com/Yurzi/dsh-web-search-enhanced#readme",
+  "bugs": {
+    "url": "https://github.com/Yurzi/dsh-web-search-enhanced/issues"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
