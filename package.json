@@ -76,7 +76,6 @@
     "@deepseek-ai/dsh-credentials": "^0.1.5-rc.2",
     "@deepseek-ai/dsh-launch-environment": "^0.1.5-rc.2",
     "@deepseek-ai/dsh-client-locale": "^0.1.5-rc.2",
-    "@deepseek-ai/dsh-client-runtime": "^0.1.5-rc.2",
     "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.2",
     "@deepseek-ai/dsh-client-ui-settings": "^0.1.5-rc.2",
     "@deepseek-ai/dsh-client-ui-settings-plugins": "^0.1.5-rc.2",
@@ -90,9 +89,6 @@
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-client-locale": {
-      "optional": true
-    },
-    "@deepseek-ai/dsh-client-runtime": {
       "optional": true
     },
     "@deepseek-ai/dsh-client-ui-renderer": {
@@ -119,10 +115,10 @@
     "@deepseek-ai/dsh-credentials": "^0.1.5-rc.2",
     "@deepseek-ai/dsh-launch-environment": "^0.1.5-rc.2",
     "@deepseek-ai/dsh-client-locale": "^0.1.5-rc.2",
-    "@deepseek-ai/dsh-client-runtime": "^0.1.5-rc.2",
     "@deepseek-ai/dsh-client-ui-renderer": "^0.1.5-rc.2",
     "@deepseek-ai/dsh-client-ui-settings": "^0.1.5-rc.2",
     "@deepseek-ai/dsh-client-ui-settings-plugins": "^0.1.5-rc.2",
+    "@deepseek-ai/dsh-client-ui-commands": "^0.1.5-rc.2",
     "@deepseek-ai/dsh-api-remotes": "^0.1.5-rc.2",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.5-rc.2",
     "@deepseek-ai/dsh-settings": "^0.1.5-rc.2",

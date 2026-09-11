@@ -1,4 +1,4 @@
-import type { SettingsScope } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 interface CredentialRemoteFailure { ok: false; error: { message: string } }
 interface CredentialRemoteSuccess<T> { ok: true; value: T }
 type CredentialRemoteResult<T> = CredentialRemoteSuccess<T> | CredentialRemoteFailure
