@@ -1,7 +1,7 @@
 import { WebError } from '@deepseek-ai/dsh-web'
 import type { WebSearchProvider, WebSearchRequest, WebSearchResult } from '@deepseek-ai/dsh-web'
 import { buildWireRequest, parseSearchResponse } from './protocols.ts'
-import type { ResolvedConfig } from './protocols.ts'
+import type { ResolvedConfig, SearchWireRecord } from './protocols.ts'
 
 /** Multi-protocol search provider. One resolved settings snapshot serves each operation. */
 export class EnhancedSearchProvider implements WebSearchProvider {
@@ -13,6 +13,7 @@ export class EnhancedSearchProvider implements WebSearchProvider {
     private readonly resolveConfig: () => ResolvedConfig,
     private readonly fetcher: typeof fetch = globalThis.fetch,
     private readonly resolveApiKey: (config: ResolvedConfig) => Promise<string | undefined> = async config => config.apiKey ?? process.env[config.apiKeyEnv],
+    private readonly recordRequest?: (record: SearchWireRecord) => void,
   ) {
     this.id = resolveConfig().providerId
   }
@@ -43,6 +44,12 @@ export class EnhancedSearchProvider implements WebSearchProvider {
       )
     }
     const wire = buildWireRequest(config, request.query, apiKey)
+    this.recordRequest?.({
+      endpoint: wire.endpoint,
+      protocol: config.protocol,
+      apiVersion: config.apiVersion,
+      body: wire.body,
+    })
     let response: Response
     try {
       response = await this.fetcher(wire.endpoint, {

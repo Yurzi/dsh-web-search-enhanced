@@ -38,7 +38,7 @@ export function draftFrom(value: SearchSettings | undefined): Draft {
     modelMode: value?.modelMode ?? 'configured',
     protocol: value?.protocol ?? 'anthropic-messages',
     baseURL: value?.baseURL ?? 'https://api.deepseek.com/anthropic/v1',
-    model: value?.model ?? 'deepseek-v4-flash',
+    model: value?.model ?? 'deepseek-flash',
     fallbackModel: value?.fallbackModel ?? '',
     apiKeyEnv: value?.apiKeyEnv ?? 'WEB_SEARCH_ENHANCED_API',
     apiVersion: value?.apiVersion ?? '2023-06-01',
@@ -338,7 +338,7 @@ export function SearchSettingsCard({ scope, credentials, t }: SearchSettingsCard
   const discard = () => { setApiKey(''); setDraft(resolved); setResetToProfile(false); setHasDraft(false); setFailed(false) }
   if (snapshot.status === 'unavailable') return null
   const toolHint: LocaleKey = draft.protocol === 'anthropic-messages' ? 'toolHintAnthropic' : draft.protocol === 'openai-responses' ? 'toolHintResponses' : draft.chatSearchMode === 'search-model' ? 'toolHintChatOfficial' : 'toolHintChatVendor'
-  return <li className="wse-card" data-open={open}>
+  return <li className="wse-card" data-open={open} data-plugin-key="web-search-enhanced" data-wse-card="true">
     <style>{cardCss}</style>
     <button type="button" className="wse-header" aria-expanded={open} aria-controls={bodyId} aria-label={`${t(open ? 'collapse' : 'expand')}: ${t('title')}`} onClick={() => { setOpen(value => !value) }}>
       <span className="wse-head"><span className="wse-name">{t('title')}</span><span className="wse-desc">{t('description')}</span></span>

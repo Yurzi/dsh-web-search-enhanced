@@ -12,6 +12,7 @@ describe('host plugin contract', () => {
 
   it('uses the plugin-owned credential reference and fallback model', () => {
     expect(resolveConfig({}).apiKeyEnv).toBe(DEFAULT_API_KEY_ENV)
+    expect(resolveConfig({}).model).toBe('deepseek-flash')
     expect(resolveConfig({ model: 'primary', fallbackModel: 'fallback' })).toMatchObject({
       modelMode: 'configured', model: 'primary', fallbackModel: 'fallback',
     })
@@ -110,6 +111,46 @@ describe('host plugin contract', () => {
           headers: expect.objectContaining({ 'x-api-key': 'ds-secret-key' }),
         }),
       )
+    } finally {
+      globalThis.fetch = origFetch
+    }
+  })
+
+  it('records outbound search request into session when agent session is active', async () => {
+    let capturedProvider: any
+    const appendedEvents: Array<{ type: string; data: any }> = []
+    const sessionMock = {
+      append: vi.fn((type: string, data: any) => {
+        appendedEvents.push({ type, data })
+      }),
+    }
+    const services = {
+      web: { registerSearchProvider: (p: any) => { capturedProvider = p } },
+      settings: { installSection: () => {} },
+      agents: { currentInitiator: () => ({ session: sessionMock }) },
+      credentials: {
+        resolve: vi.fn(async () => ({ value: 'ds-secret-key' })),
+      },
+    }
+    const ctx = {
+      web: services.web,
+      get: (key: string) => services[key as keyof typeof services],
+      inject: (_deps: string[], cb: (c: any) => void) => cb({ settings: services.settings }),
+    } as unknown as Context
+
+    apply(ctx, { protocol: 'anthropic-messages', baseURL: 'https://api.deepseek.com/anthropic/v1' })
+
+    const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ content: [
+      { type: 'web_search_tool_result', content: [{ type: 'web_search_result', url: 'https://deepseek.com' }] },
+    ] }), { status: 200, headers: { 'content-type': 'application/json' } }))
+    const origFetch = globalThis.fetch
+    globalThis.fetch = fetchSpy as any
+    try {
+      await capturedProvider.search({ query: 'tracked query' })
+      expect(sessionMock.append).toHaveBeenCalledTimes(1)
+      expect(appendedEvents[0]?.type).toBe('web/deepseek-search-llm-request')
+      expect(appendedEvents[0]?.data.endpoint).toBe('https://api.deepseek.com/anthropic/v1/messages')
+      expect(JSON.stringify(appendedEvents[0]?.data)).not.toContain('ds-secret-key')
     } finally {
       globalThis.fetch = origFetch
     }

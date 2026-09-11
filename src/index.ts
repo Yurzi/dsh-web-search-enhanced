@@ -10,14 +10,14 @@ import type {} from '@deepseek-ai/dsh-settings'
 import type { WebSearchProvider, WebSearchRequest, WebSearchResult } from '@deepseek-ai/dsh-web'
 import { EnhancedSearchProvider } from './provider.ts'
 import { defaultToolIdentifier } from './protocols.ts'
-import type { ChatSearchMode, ModelMode, ResolvedConfig, SearchContextSize, SearchProtocol } from './protocols.ts'
+import type { ChatSearchMode, ModelMode, ResolvedConfig, SearchContextSize, SearchProtocol, SearchWireRecord } from './protocols.ts'
 
 /** Provider id selected by the bundled Web Profile patch. */
 export const DEFAULT_PROVIDER_ID = 'enhanced-search'
 /** Default Anthropic-compatible search endpoint. */
 export const DEFAULT_BASE_URL = 'https://api.deepseek.com/anthropic/v1'
 /** Default model aligned with DSH's built-in search provider. */
-export const DEFAULT_MODEL = 'deepseek-v4-flash'
+export const DEFAULT_MODEL = 'deepseek-flash'
 /** Credential reference owned by this plugin's fixed and fallback routes. */
 export const DEFAULT_API_KEY_ENV = 'WEB_SEARCH_ENHANCED_API'
 /** Settings namespace paired with the plugin configuration card. */
@@ -89,7 +89,10 @@ export function resolveConfig(config: Config): ResolvedConfig {
 
 interface AgentSelection { provider?: string; model?: string }
 interface RequestHeader { config?: AgentSelection }
-interface AgentSession { requestHeader?: () => RequestHeader | undefined }
+interface AgentSession {
+  requestHeader?: () => RequestHeader | undefined
+  append?: (type: string, data: unknown) => unknown
+}
 interface Initiator { options?: AgentSelection; session?: AgentSession }
 interface AgentsService { currentInitiator?: () => Initiator | undefined }
 interface DefaultModelService { currentSelection?: () => AgentSelection | undefined }
@@ -169,9 +172,13 @@ export async function resolveRuntimeConfig(ctx: Context, config: Config): Promis
 }
 
 /** Construct a fixed-config provider for tests or custom compositions. */
-export function createProvider(config: Config = {}, fetcher: typeof fetch = globalThis.fetch): EnhancedSearchProvider {
+export function createProvider(
+  config: Config = {},
+  fetcher: typeof fetch = globalThis.fetch,
+  recordRequest?: (record: SearchWireRecord) => void,
+): EnhancedSearchProvider {
   const resolved = resolveConfig(config)
-  return new EnhancedSearchProvider(() => resolved, fetcher)
+  return new EnhancedSearchProvider(() => resolved, fetcher, async c => c.apiKey ?? process.env[c.apiKeyEnv], recordRequest)
 }
 
 function installPluginSettings(
@@ -251,6 +258,18 @@ export function apply(ctx: Context, config: Config): void {
           }
           return undefined
         },
+        (record) => {
+          try {
+            const initiator = contextService<AgentsService>(ctx, 'agents')?.currentInitiator?.()
+            initiator?.session?.append?.('web/deepseek-search-llm-request', {
+              endpoint: record.endpoint,
+              apiVersion: record.apiVersion ?? '2023-06-01',
+              body: record.body,
+            })
+          } catch {
+            // Logging failure should never block or fail the search request
+          }
+        },
       ).search(request, signal)
     },
   }
@@ -279,4 +298,4 @@ function assertResolvedConfig(config: ResolvedConfig): void {
 }
 
 export { EnhancedSearchProvider } from './provider.ts'
-export type { ChatSearchMode, ModelMode, ResolvedConfig, SearchContextSize, SearchProtocol } from './protocols.ts'
+export type { ChatSearchMode, ModelMode, ResolvedConfig, SearchContextSize, SearchProtocol, SearchWireRecord } from './protocols.ts'

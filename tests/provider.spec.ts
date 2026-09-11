@@ -69,4 +69,24 @@ describe('enhanced search provider', () => {
       message: expect.stringContaining('The web search request used endpoint'),
     })
   })
+
+  it('invokes recordRequest with sanitized wire request before dispatch', async () => {
+    const records: any[] = []
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ content: [
+      { type: 'web_search_tool_result', content: [{ type: 'web_search_result', url: 'https://test.com' }] },
+    ] }), { status: 200, headers: { 'content-type': 'application/json' } }))
+    const provider = createProvider(
+      { protocol: 'anthropic-messages', apiKey: 'super-secret-key' },
+      fetcher as unknown as typeof fetch,
+      record => { records.push(record) },
+    )
+    await provider.search({ query: 'audit query' })
+    expect(records).toHaveLength(1)
+    const rec = records[0]
+    expect(rec.endpoint).toBe('https://api.deepseek.com/anthropic/v1/messages')
+    expect(rec.protocol).toBe('anthropic-messages')
+    expect(rec.apiVersion).toBe('2023-06-01')
+    expect(rec.body.messages[0].content[0].text).toContain('audit query')
+    expect(JSON.stringify(rec)).not.toContain('super-secret-key')
+  })
 })

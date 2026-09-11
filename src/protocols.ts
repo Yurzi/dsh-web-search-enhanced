@@ -10,6 +10,14 @@ export type SearchContextSize = 'low' | 'medium' | 'high'
 /** Chat Completions search activation: official search-model semantics or an explicit vendor extension. */
 export type ChatSearchMode = 'search-model' | 'vendor-options'
 
+/** Audit record capturing one outbound search request immediately before dispatch. */
+export interface SearchWireRecord {
+  readonly endpoint: string
+  readonly protocol: SearchProtocol
+  readonly apiVersion?: string
+  readonly body: Readonly<Record<string, unknown>>
+}
+
 /** Fully resolved settings captured at one search operation's entry. */
 export interface ResolvedConfig {
   readonly providerId: string
@@ -54,7 +62,7 @@ export function defaultToolIdentifier(protocol: SearchProtocol): string {
 /** Build one protocol request from resolved settings and a model-facing search query. */
 export function buildWireRequest(config: ResolvedConfig, query: string, apiKey: string): WireRequest {
   const prompt = `Perform a web search for the query: ${query}`
-  const commonHeaders = { 'accept': 'application/json', 'content-type': 'application/json', 'user-agent': 'dsh-web-search-enhanced/0.0.4' }
+  const commonHeaders = { 'accept': 'application/json', 'content-type': 'application/json', 'user-agent': 'dsh-web-search-enhanced/0.0.5' }
   switch (config.protocol) {
     case 'anthropic-messages': return {
       endpoint: appendEndpoint(config.baseURL, config.protocol),

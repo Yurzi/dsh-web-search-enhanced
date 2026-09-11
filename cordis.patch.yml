@@ -16,5 +16,5 @@
         modelMode: configured
         protocol: anthropic-messages
         apiKeyEnv: WEB_SEARCH_ENHANCED_API
-        fallbackModel: deepseek-v4-flash
+        fallbackModel: deepseek-flash
         maxTokens: 4096

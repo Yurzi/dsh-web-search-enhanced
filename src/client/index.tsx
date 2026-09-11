@@ -29,4 +29,27 @@ export function apply(ctx: Context): void {
     locale: LOCALE_NAMESPACE,
     inject: () => ({ scope, credentials: (ctx.remote as unknown as { credentials: CredentialRemote }).credentials, t }),
   }, SearchSettingsCard))
+
+  ctx.inject(['commandUi'], (scope: Context) => {
+    const commandUi = (scope as unknown as { commandUi?: { register?: (c: unknown) => () => void } }).commandUi
+    if (typeof commandUi?.register === 'function') {
+      scope.effect(() => commandUi.register!({
+        name: 'search-config',
+        label: () => t('commandLabel'),
+        description: () => t('commandDescription'),
+        available: () => true,
+        ui: {
+          kind: 'action',
+          run: () => {
+            const trigger = document.querySelector('[data-slot="sidebar.settings"] button') as HTMLButtonElement | null
+            trigger?.click()
+            setTimeout(() => {
+              const card = document.querySelector('[data-wse-card="true"]')
+              card?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            }, 200)
+          },
+        },
+      }), 'web-search-enhanced: /search-config action command')
+    }
+  })
 }

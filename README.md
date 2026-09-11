@@ -2,7 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/dsh-web-search-enhanced.svg)](https://www.npmjs.com/package/dsh-web-search-enhanced)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![DeepSeek Harness](https://img.shields.io/badge/DeepSeek%20Harness-%3E%3D0.1.2--rc.1%20(RC%20Only)-blueviolet)](https://github.com/deepseek-ai/deepseek-harness)
+[![DeepSeek Harness](https://img.shields.io/badge/DeepSeek%20Harness-%3E%3D0.1.5--rc.2%20(RC%20Only)-blueviolet)](https://github.com/deepseek-ai/deepseek-harness)
 
 **dsh-web-search-enhanced** 是为 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) 量身打造的增强型多协议联网搜索插件。
 
@@ -24,7 +24,7 @@
 - 🌐 **多协议全面兼容**：无缝支持 **Anthropic Messages v1** (`/messages`)、**OpenAI Responses API** (`/responses`) 与 **OpenAI Chat Completions API** (`/chat/completions`) 三大协议，兼容各类官方端点与第三方 / 自建 AI 网关。
 - 🔄 **灵活的双路由模式**：
   - **跟随当前会话 (`current-session`)**：自动继承当前会话正在使用的模型、提供方、调用协议与凭据，直接使用主模型供应商的搜索功能。
-  - **固定搜索路由 (`configured`)**：为联网搜索单独指定专用搜索模型（如 `deepseek-v4-flash`、`claude-3-7-sonnet`、`gpt-4o` 等），主对话与搜索模型分工明确。
+  - **固定搜索路由 (`configured`)**：为联网搜索单独指定专用搜索模型（如 `deepseek-flash`、`claude-3-7-sonnet`、`gpt-4o` 等），主对话与搜索模型分工明确。
   - **智能平滑兜底 (`fallbackModel`)**：当跟随模式遇到未知或未配置的模型路由时，自动降级至备用模型，确保搜索永不断流。
 - 🖥️ **Web 控制台可视化配置**：深度集成 DSH Web 端「设置 → 插件 → Web Search Enhanced」，支持中英文双语、即时表单校验、草稿暂存、一键保存与重置。
 - 🔒 **凭据安全与隐私保护**：通过 DSH 原生 Credentials 机制安全写入并保管 API Key，公开设置文档绝不保存明文密钥；请求强制阻断携带凭据的恶意 HTTP 重定向。
@@ -34,9 +34,9 @@
 
 ## 📋 版本兼容与支持策略 (Compatibility & Requirements)
 
-- **最低支持的 DSH 版本**：`>= 0.1.2-rc.1`
+- **最低支持的 DSH 版本**：`>= 0.1.5-rc.2`
 - **版本支持范围声明**：
-  > ⚠️ **重要声明**：**本插件仅对 DeepSeek Harness 的 Release Candidate (RC) 版本进行官方维护与兼容性支持（最低版本要求为 0.1.2-rc.1）**。
+  > ⚠️ **重要声明**：**本插件仅对 DeepSeek Harness 的 Release Candidate (RC) 版本进行官方维护与兼容性支持（最低版本要求为 0.1.5-rc.2）**。
   > 插件不提供对开发中的 Alpha / Beta / Nightly 构建版本的稳定性承诺与 API 兼容保证。在升级 DSH 或使用本插件时，请确保运行环境使用的是官方正式的 RC 发布版本。
 
 ---
@@ -65,8 +65,10 @@ dsh web
 
 ### 方式一：Web 界面可视化配置（推荐）
 
+> ⚡ **快捷命令**：在任何会话输入框中键入斜杠命令 `/search-config` 并回车，即可一键直达本插件设置面板！
+
 1. 打开 DeepSeek Harness Web 界面（默认 `http://127.0.0.1:3080`）。
-2. 点击左侧/顶部导航栏的 **设置 (Settings)** → **插件 (Plugins)**。
+2. 点击左侧导航栏的 **设置 (Settings)** → **插件 (Plugins)**（或使用 `/search-config`）。
 3. 找到 **Web Search Enhanced (插件配置)** 卡片。
 4. 根据需要选择**模型路由**、**API 协议**、**接口地址 (Base URL)** 与 **模型标识 (Model ID)**。
 5. 在 **API Key** 输入框中输入对应的模型供应商 API 密钥（输入后仅用于安全保存，保存成功后输入框自动清空，不留明文痕迹）。
@@ -91,7 +93,7 @@ dsh web
        modelMode: configured
        protocol: anthropic-messages
        baseURL: https://api.deepseek.com/anthropic/v1
-       model: deepseek-v4-flash
+       model: deepseek-flash
        apiKeyEnv: WEB_SEARCH_ENHANCED_API
        maxTokens: 4096
    ```
@@ -107,7 +109,7 @@ dsh web
 - **模型路由 (modelMode)**: `固定配置 (configured)`
 - **API 协议 (protocol)**: `Anthropic Messages v1`
 - **接口地址 (baseURL)**: `https://api.deepseek.com/anthropic/v1`
-- **模型标识 (model)**: `deepseek-v4-flash`
+- **模型标识 (model)**: `deepseek-flash`
 - **API Key**: 填入你的 DeepSeek API Key
 
 ---
@@ -148,7 +150,7 @@ dsh web
 ### 5. 跟随当前会话模型（自动继承厂商搜索）
 让搜索自动使用当前 Agent 会话正在对话的模型供应商与协议：
 - **模型路由 (modelMode)**: `当前会话模型 (current-session)`
-- **兜底搜索模型 (fallbackModel)**: `deepseek-v4-flash`（当当前模型不支持搜索协议或未解析到凭据时自动平滑回退）
+- **兜底搜索模型 (fallbackModel)**: `deepseek-flash`（当当前模型不支持搜索协议或未解析到凭据时自动平滑回退）
 - **API 协议 / 接口地址 / API Key**: 自动跟随当前会话的 LLM 路由配置
 
 ---
@@ -160,7 +162,7 @@ dsh web
 | `modelMode` | 模型路由 | `configured` | `configured` (固定配置)<br>`current-session` (跟随当前会话) | 决定搜索使用固定的独立模型，还是跟随当前会话的模型与协议。 |
 | `protocol` | API 协议 | `anthropic-messages` | `anthropic-messages`<br>`openai-responses`<br>`openai-chat-completions` | 固定路由或兜底路由使用的上游 HTTP 协议。 |
 | `baseURL` | 接口基础地址 | `https://api.deepseek.com/anthropic/v1` | 绝对 HTTP(S) URL | 上游接口的基础 URL。若末尾未包含协议端点后缀，插件会自动补全。 |
-| `model` | 模型标识 | `deepseek-v4-flash` | 字符串 | 固定路由使用的模型 ID，或无会话模型时的默认模型。 |
+| `model` | 模型标识 | `deepseek-flash` | 字符串 | 固定路由使用的模型 ID，或无会话模型时的默认模型。 |
 | `fallbackModel` | 兜底搜索模型 | 留空（默认同 `model`） | 字符串 | 仅跟随模式：当无法解析当前会话路由时所采用的兜底模型。 |
 | `apiKeyEnv` | API Key 环境变量 | `WEB_SEARCH_ENHANCED_API` | 环境变量名 | 读取 API Key 的凭据引用名称。 |
 | `apiKey` | API Key | 无 | 字符串（密钥） | Web 设置界面提供的一次性保存输入框，安全存入 DSH 凭据中心后自动清空。 |

@@ -2,6 +2,15 @@
 
 All notable changes to the `dsh-web-search-enhanced` package will be documented in this file.
 
+## [0.0.5] - 2026-09-11
+
+### Changed
+- **DSH 0.1.5-rc.2 Exclusivity & Compatibility**: Upgraded engine requirement to `engines.dsh >= 0.1.5-rc.2` and all `@deepseek-ai/*` peerDependencies/devDependencies to `^0.1.5-rc.2`, dropping legacy support for `v0.1.2-rc.1`.
+- **Default Model Upgrade**: Updated global `DEFAULT_MODEL` and profile patch fallback model from `deepseek-v4-flash` to `deepseek-flash` (DeepSeek-V41-Flash) to match upstream DSH 0.1.5 conventions.
+- **Session Audit & Transparency (`recordRequest`)**: Implemented pre-dispatch request logging via `session.append('web/deepseek-search-llm-request')`, safely capturing resolved endpoints, protocol identifiers, API versions, and secret-free payloads for turn auditing and trajectory exports.
+- **Client Action Command (`/search-config`)**: Added client-side `/search-config` action command leveraging DSH 0.1.5 `ActionSpec` (`kind: 'action'`) to provide instant one-click navigation directly to the Web Search Enhanced settings card without interrupting conversation flow.
+- **Egress & Proxy Verification**: Expanded egress test suite to verify outbound request dispatching under proxy and custom fetcher environments.
+
 ## [0.0.4] - 2026-09-03
 
 ### Changed

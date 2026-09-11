@@ -42,6 +42,7 @@ describe('installable DSH profile bundle', () => {
     expect(manifest.files).toContain('lib/client.js')
     expect(manifest.dsh?.client?.platform).toBe('web')
     expect(manifest.dsh?.client?.inject).toContain('@deepseek-ai/dsh-client-ui-settings-plugins')
+    expect(manifest.dsh?.client?.inject).toContain('@deepseek-ai/dsh-client-ui-commands')
   })
 
   it('declares cordis.patch.yml with searchProvider without overriding fetchProvider', () => {

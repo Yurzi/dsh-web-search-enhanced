@@ -1,6 +1,6 @@
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { createProvider } from '../src/index.ts'
 
 let seen: string[] = []
@@ -33,5 +33,25 @@ describe('enhanced search egress', () => {
     const result = await provider.search({ query: 'probe' })
     expect(result.sources).toEqual([{ url: 'https://proxied.example.com' }])
     expect(seen).toEqual(['POST /v1/messages'])
+  })
+
+  it('dispatches through custom egress fetcher or proxy agent when configured', async () => {
+    const proxyHits: string[] = []
+    const proxyFetcher = vi.fn(async (input: any) => {
+      proxyHits.push("PROXIED " + String(input))
+      return new Response(JSON.stringify({
+        content: [
+          { type: 'web_search_tool_result', content: [{ type: 'web_search_result', url: 'https://proxy-outbound.example.com' }] },
+        ],
+      }), { status: 200, headers: { 'content-type': 'application/json' } })
+    })
+    const provider = createProvider({
+      apiKey: 'test-key',
+      baseURL: 'https://api.example.com/v1',
+      protocol: 'anthropic-messages',
+    }, proxyFetcher as any)
+    const result = await provider.search({ query: 'test proxy' })
+    expect(result.sources).toEqual([{ url: 'https://proxy-outbound.example.com' }])
+    expect(proxyHits).toEqual(['PROXIED https://api.example.com/v1/messages'])
   })
 })
