@@ -26,11 +26,99 @@ export interface SearchSettings {
   searchContextSize?: 'low' | 'medium' | 'high'
 }
 export interface SearchSettingsCardProps { scope: SettingsScope<SearchSettings>; credentials: CredentialRemote; t: (key: LocaleKey) => string }
-interface Draft {
+export interface Draft {
   modelMode: ModelMode; protocol: SearchProtocol; baseURL: string; model: string; fallbackModel: string; apiKeyEnv: string; apiVersion: string
   toolIdentifier: string; maxTokens: string; maxUses: string; chatSearchMode: 'search-model' | 'vendor-options'; searchContextSize: '' | 'low' | 'medium' | 'high'
 }
-const editableFields = ['modelMode', 'protocol', 'baseURL', 'model', 'fallbackModel', 'apiKeyEnv', 'apiVersion', 'toolIdentifier', 'maxTokens', 'maxUses', 'chatSearchMode', 'searchContextSize'] as const
+export const editableFields = ['modelMode', 'protocol', 'baseURL', 'model', 'fallbackModel', 'apiKeyEnv', 'apiVersion', 'toolIdentifier', 'maxTokens', 'maxUses', 'chatSearchMode', 'searchContextSize'] as const
+
+/** Schema default values aligned with host plugin definitions. */
+export const SCHEMA_DEFAULTS: Record<typeof editableFields[number], unknown> = {
+  modelMode: 'configured',
+  protocol: 'anthropic-messages',
+  baseURL: 'https://api.deepseek.com/anthropic/v1',
+  model: 'deepseek-flash',
+  fallbackModel: undefined,
+  apiKeyEnv: 'WEB_SEARCH_ENHANCED_API',
+  apiVersion: '2023-06-01',
+  toolIdentifier: undefined,
+  maxTokens: 4096,
+  maxUses: 5,
+  chatSearchMode: 'search-model',
+  searchContextSize: undefined,
+}
+
+export interface SettingsMutationOp {
+  op: 'set' | 'unset'
+  path: string[]
+  value?: unknown
+}
+
+export function targetValuesFromDraft(draft: Draft): Record<typeof editableFields[number], unknown> {
+  return {
+    modelMode: draft.modelMode,
+    protocol: draft.protocol,
+    baseURL: draft.baseURL.trim(),
+    model: draft.model.trim(),
+    fallbackModel: draft.fallbackModel.trim().length === 0 ? undefined : draft.fallbackModel.trim(),
+    apiKeyEnv: draft.apiKeyEnv.trim(),
+    apiVersion: draft.apiVersion.trim(),
+    toolIdentifier: draft.toolIdentifier.trim().length === 0 ? undefined : draft.toolIdentifier.trim(),
+    maxTokens: Number(draft.maxTokens),
+    maxUses: Number(draft.maxUses),
+    chatSearchMode: draft.chatSearchMode,
+    searchContextSize: draft.searchContextSize === '' ? undefined : draft.searchContextSize,
+  }
+}
+
+/**
+ * Compute sparse mutation operations required to synchronize user overrides.
+ * Default values matching the inherited baseline are omitted to prevent settings.yaml
+ * bloating, and existing redundant overrides are pruned automatically.
+ */
+export function computeSettingsOperations(
+  draft: Draft,
+  snapshot: { base?: unknown; user?: unknown },
+  resetToProfile = false,
+): SettingsMutationOp[] {
+  const baseConfig = typeof snapshot.base === 'object' && snapshot.base !== null
+    ? (snapshot.base as Record<string, unknown>)
+    : {}
+  const userConfig = typeof snapshot.user === 'object' && snapshot.user !== null
+    ? (snapshot.user as Record<string, unknown>)
+    : {}
+  const ops: SettingsMutationOp[] = []
+
+  if (resetToProfile) {
+    for (const field of editableFields) {
+      if (field in userConfig) {
+        ops.push({ op: 'unset', path: [field] })
+      }
+    }
+    return ops
+  }
+
+  const targets = targetValuesFromDraft(draft)
+  for (const field of editableFields) {
+    const targetVal = targets[field]
+    const baselineVal = baseConfig[field] !== undefined ? baseConfig[field] : SCHEMA_DEFAULTS[field]
+    const isOverriddenInUser = field in userConfig
+
+    if (targetVal !== baselineVal) {
+      if (targetVal === undefined) {
+        if (isOverriddenInUser) {
+          ops.push({ op: 'unset', path: [field] })
+        }
+      } else {
+        ops.push({ op: 'set', path: [field], value: targetVal })
+      }
+    } else if (isOverriddenInUser) {
+      ops.push({ op: 'unset', path: [field] })
+    }
+  }
+
+  return ops
+}
 
 /** Convert resolved settings into a stable form draft. */
 export function draftFrom(value: SearchSettings | undefined): Draft {
@@ -312,24 +400,19 @@ export function SearchSettingsCard({ scope, credentials, t }: SearchSettingsCard
     setSaving(true); setFailed(false)
     try {
       if (await saveCredential(credentials, draft.apiKeyEnv, apiKey)) setCredentialConfigured(true)
-      if (resetToProfile) {
-        for (const field of editableFields) await scope.unset(field)
-      } else {
-        await scope.set('modelMode', draft.modelMode)
-        await scope.set('protocol', draft.protocol)
-        await scope.set('baseURL', draft.baseURL.trim())
-        await scope.set('model', draft.model.trim())
-        if (draft.fallbackModel.trim().length === 0) await scope.unset('fallbackModel')
-        else await scope.set('fallbackModel', draft.fallbackModel.trim())
-        await scope.set('apiKeyEnv', draft.apiKeyEnv.trim())
-        await scope.set('apiVersion', draft.apiVersion.trim())
-        if (draft.toolIdentifier.trim().length === 0) await scope.unset('toolIdentifier')
-        else await scope.set('toolIdentifier', draft.toolIdentifier.trim())
-        await scope.set('maxTokens', Number(draft.maxTokens))
-        await scope.set('maxUses', Number(draft.maxUses))
-        await scope.set('chatSearchMode', draft.chatSearchMode)
-        if (draft.searchContextSize === '') await scope.unset('searchContextSize')
-        else await scope.set('searchContextSize', draft.searchContextSize)
+      const ops = computeSettingsOperations(draft, snapshot, resetToProfile)
+      if (ops.length > 0) {
+        if (typeof scope.mutate === 'function') {
+          await scope.mutate(ops as any)
+        } else {
+          for (const op of ops) {
+            const field = op.path[0]
+            if (field !== undefined) {
+              if (op.op === 'set') await scope.set(field, op.value)
+              else await scope.unset(field)
+            }
+          }
+        }
       }
       setApiKey(''); setHasDraft(false); setResetToProfile(false); setOpen(false)
     } catch { setFailed(true) } finally { setSaving(false) }

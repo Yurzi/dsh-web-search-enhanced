@@ -10,7 +10,7 @@ describe('protocol request adapters', () => {
   it('builds Anthropic Messages v1 with configurable tool type and max_tokens', () => {
     const wire = buildWireRequest(config('anthropic-messages', 'web_search_20990101'), 'latest news', 'secret')
     expect(wire.endpoint).toBe('https://api.example/v1/messages')
-    expect(wire.headers).toMatchObject({ 'anthropic-version': '2023-06-01', 'x-api-key': 'secret', 'user-agent': 'dsh-web-search-enhanced/0.0.5' })
+    expect(wire.headers).toMatchObject({ 'anthropic-version': '2023-06-01', 'x-api-key': 'secret', 'user-agent': 'dsh-web-search-enhanced/0.0.6' })
     expect(wire.body).toMatchObject({ max_tokens: 1234, tools: [{ type: 'web_search_20990101', name: 'web_search', max_uses: 7 }] })
   })
 

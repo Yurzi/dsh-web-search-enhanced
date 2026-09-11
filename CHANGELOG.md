@@ -2,6 +2,17 @@
 
 All notable changes to the `dsh-web-search-enhanced` package will be documented in this file.
 
+## [0.0.6] - 2026-09-11
+
+### Changed
+- **Sparse Settings Mutation & Bloat Prevention**: Redesigned client settings card (`SearchSettingsCard`) with differential analysis (`computeSettingsOperations`) against schema defaults and composition base. Default values matching the inherited baseline are omitted to prevent `$DSH_HOME/settings.yaml` from bloating.
+- **Redundant Overrides Self-Healing & Pruning**: Existing redundant default keys in user settings are automatically pruned via `unset` operations on save or reset, restoring a clean configuration file for existing users.
+- **Single Atomic Mutation Batching (`scope.mutate`)**: Replaced consecutive serial `scope.set` calls with a single atomic `scope.mutate(ops)` transaction, eliminating multiple filesystem locks and I/O thrashing during settings persistence.
+- **Decoupled Credential Storage**: Saving an API key without modifying other configuration parameters executes credential writes exclusively, resulting in zero mutations written to `settings.yaml`.
+
+### Removed
+- **Scaffolding & Outdated Documentation**: Cleaned up obsolete template comparison and outdated alpha contract references from `docs/`.
+
 ## [0.0.5] - 2026-09-11
 
 ### Changed

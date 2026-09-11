@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { draftFrom, saveCredential, validateDraft } from '../src/client/SearchSettingsCard.tsx'
+import { computeSettingsOperations, draftFrom, saveCredential, validateDraft } from '../src/client/SearchSettingsCard.tsx'
 import { apply, inject } from '../src/client/index.tsx'
 import { en, zh } from '../src/client/locales.ts'
 
@@ -74,5 +74,67 @@ describe('settings card helpers', () => {
     expect(registered[0]?.ui?.kind).toBe('action')
     expect(typeof registered[0]?.ui?.run).toBe('function')
     expect(registered[0]?.available()).toBe(true)
+  })
+
+  describe('sparse configuration mutations (preventing settings.yaml bloat)', () => {
+    it('produces zero operations when draft matches defaults on clean install', () => {
+      const draft = draftFrom({})
+      const ops = computeSettingsOperations(draft, { base: {}, user: undefined })
+      expect(ops).toEqual([])
+    })
+
+    it('produces only the changed field operation when one setting is modified', () => {
+      const draft = draftFrom({})
+      draft.model = 'deepseek-chat'
+      const ops = computeSettingsOperations(draft, { base: {}, user: undefined })
+      expect(ops).toEqual([{ op: 'set', path: ['model'], value: 'deepseek-chat' }])
+    })
+
+    it('stores numeric and select fields with proper types', () => {
+      const draft = draftFrom({})
+      draft.maxTokens = '8192'
+      draft.modelMode = 'current-session'
+      const ops = computeSettingsOperations(draft, { base: {}, user: undefined })
+      expect(ops).toEqual([
+        { op: 'set', path: ['modelMode'], value: 'current-session' },
+        { op: 'set', path: ['maxTokens'], value: 8192 },
+      ])
+    })
+
+    it('prunes existing redundant user overrides when they match the baseline defaults', () => {
+      const draft = draftFrom({})
+      const bloatedUser = {
+        baseURL: 'https://api.deepseek.com/anthropic/v1',
+        model: 'deepseek-flash',
+        maxTokens: 4096,
+      }
+      const ops = computeSettingsOperations(draft, { base: {}, user: bloatedUser })
+      expect(ops).toEqual([
+        { op: 'unset', path: ['baseURL'] },
+        { op: 'unset', path: ['model'] },
+        { op: 'unset', path: ['maxTokens'] },
+      ])
+    })
+
+    it('unsets all user-layer fields when resetToProfile is true', () => {
+      const draft = draftFrom({})
+      const user = {
+        model: 'custom-model',
+        maxTokens: 2048,
+      }
+      const ops = computeSettingsOperations(draft, { base: {}, user }, true)
+      expect(ops).toEqual([
+        { op: 'unset', path: ['model'] },
+        { op: 'unset', path: ['maxTokens'] },
+      ])
+    })
+
+    it('respects base composition values and does not store identical target values', () => {
+      const draft = draftFrom({})
+      draft.fallbackModel = 'deepseek-flash'
+      const base = { fallbackModel: 'deepseek-flash' }
+      const ops = computeSettingsOperations(draft, { base, user: undefined })
+      expect(ops).toEqual([])
+    })
   })
 })

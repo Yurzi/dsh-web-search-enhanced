@@ -1,6 +1,6 @@
 {
   "name": "dsh-web-search-enhanced",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "Multi-protocol web_search provider for DeepSeek Harness",
   "license": "MIT",
   "type": "module",

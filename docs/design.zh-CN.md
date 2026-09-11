@@ -41,7 +41,13 @@ Chat Completions 与 Responses 的联网搜索表示不同。官方 Chat Complet
 
 ## 4. 配置模型
 
-Schema defaults → Profile composition base → 用户持久化覆盖构成设置层级。resolved config 在操作入口校验 provider ID、绝对 URL、必填字符串、安全标识符、正整数 Token/使用次数和封闭 context-size 枚举。配置卡片采用暂存编辑；客户端即时校验，Host 执行权威校验。恢复 Profile 清除用户层字段，不复制默认值。
+Schema defaults → Profile composition base → 用户持久化覆盖构成三层设置层级。设置系统遵循稀疏覆盖（Sparse Overrides）原则：
+1. **默认值不写入**：配置卡片在保存时比对用户编辑值与继承基准（Base / Schema default），与默认值一致且原本未覆盖的项不写入 `$DSH_HOME/settings.yaml`，避免配置文件膨胀与默认值版本锁死；
+2. **存量冗余项自动修剪**：对于历史版本中已全量写入默认值的用户，在保存或重置时自动将匹配默认值的键通过 `unset` 移除，实现配置文件静默瘦身；
+3. **单次原子提交**：使用 `scope.mutate(ops)` 批量原子提交所有的 `set` 与 `unset` 变更，避免逐字段串行 I/O 与文件锁争用；
+4. **机密与配置隔离**：API Key 仅写入 DSH 安全凭据域（Credentials Domain），纯 Key 录入对 `settings.yaml` 产生 0 写入。
+
+resolved config 在操作入口校验 provider ID、绝对 URL、必填字符串、安全标识符、正整数 Token/使用次数和封闭 context-size 枚举。配置卡片采用暂存编辑；客户端即时校验，Host 执行权威校验。恢复 Profile 清除用户层字段，不复制默认值。
 
 ## 5. 错误与安全
 
