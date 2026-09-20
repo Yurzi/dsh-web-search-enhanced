@@ -7,10 +7,10 @@ DSH 原生 web_search 的会话级搜索连接插件。此分支尚未发布，�
 - **已有 Session**：通过官方 conversation.input.right 列表槽追加搜索连接选择器，不替换对话模型或 composer。Session 独立选择，服务端持久化及 revision 冲突检查，切换影响后续推理 step。
 - **结构化搜索**：Firecrawl、Exa、Tavily、Tinyfish。目录默认值留在代码，只填写 DSH Credentials 即可配置。
 - **固定模型**：Anthropic Messages、OpenAI Responses、OpenAI Chat Completions 共用协议解析器。协议兼容不意味着模型支持服务端搜索，请核实能力和价格。
-- **跟随会话模型**：连接配置和共用执行模型已实现，但当前宿主没有公开实际请求冻结的完整路由与凭据绑定。明确不可用，不猜测当前设置、不暗中换服务。
+- **跟随会话模型**：已接通 Session request header → DSH settings → Credentials。复用旧版路由解析思路，按请求冻结配置，不借用固定连接的 Key，不暗中换服务；具体支持边界见下文。
 - **空白会话**：宿主在没有 sessionId 时不渲染该槽，没有首条 prompt 前等待插件草稿的接口；首条消息前的选择器尚未接通。可以预设新会话默认连接。
 
-**全目标尚未闭环**。证据和精确宿主扩展需求见 [实施记录](docs/v2-implementation.zh-CN.md)。
+**首版插件侧功能已实现；空白会话首消息前选择等完整目标仍有边界。** 证据、验证范围与剩余宿主配合项见 [实施记录](docs/v2-implementation.zh-CN.md)。
 
 ## Key-only 配置
 
@@ -22,7 +22,7 @@ DSH 原生 web_search 的会话级搜索连接插件。此分支尚未发布，�
 | builtin:exa | EXA_API_KEY | https://api.exa.ai/search |
 | builtin:tavily | TAVILY_API_KEY | https://api.tavily.com/search |
 | builtin:tinyfish | TINYFISH_API_KEY | https://api.search.tinyfish.ai |
-| builtin:session-model | 实际会话绑定（宿主尚不支持） | 不保存副本 |
+| builtin:session-model | 当前 provider 的 apiKeyEnv | 当前 provider 的地址／目录默认，不保存副本 |
 
 “已配置”仅表示本地凭据齐备，**不是健康或余额验证**。没有 Key 不阻止普通聊天。安装不会遍历服务请求。内置地址不能覆盖；自建地址使用自定义连接，并显式确认信任。
 
@@ -44,6 +44,18 @@ web-search-enhanced:
 | realtime | 内联 markdown，maxAge = 0 | contents.maxAgeHours = 0 | 同上 |
 
 切换连接不会重置顶层 freshness。偏好不保证页面可抓取或实时；缺少正文时不冒充实时内容。优先新鲜/实时可能增加费用和延迟。数量截断不表示新鲜度达标。插件只在私有、有界、无查询/Key 的诊断中记录 applied / ignored / partial，不伪装成 DSH 结果扩展字段，也不声称已验证实际新鲜度。
+
+## 跟随会话模型
+
+选择 builtin:session-model，或把它设为新会话默认。不必重复填写模型、地址或 Key。
+
+- 当前工具调用的 exec.agent.session.requestHeader().config 决定 provider/model；尚无 header 时才读取同一 agent 的 options，不混拼不完整 header。
+- 从 settings 的 llm-pi-ai.providers[provider] 读取 api、baseURL、apiKeyEnv。支持 anthropic-messages、openai-responses、openai-completions（映射为 openai-chat-completions）和 openai-chat-completions。
+- api/baseURL 缺省时，可通过已安装 pi-ai adapter 的只读目录补齐。此兼容入口仅用于目录默认值；显式配置不依赖它，接口缺失只影响缺省值补齐。
+- **首版要求 provider 显式配置 apiKeyEnv**，通过 DSH Credentials.resolve 读取；不重建 pi-ai scoped credential record、OAuth/订阅或 ambient auth。已有显式引用无需重新保存 Key。
+- 有自定义 headers、非 HTTP 传输、非法地址或未知协议时明确拒绝；不把其他认证秘密复制到快照。当前 rc.2 的 model entries/modelOverrides 不支持单独覆盖 endpoint、协议或 Key，插件也不虚构这些字段。
+- agent/request 冻结无密钥 provider 配置，同一步重试不重取；实际工具执行按已提交 provider/model 整体解析，多个查询复用绑定。设置变化在下一新 step 采样，adapter 替换或移除使旧请求明确失败。
+- 普通三协议路由不需要修改宿主。模型仍须支持相应服务端搜索；“已配置”不是能力或额度保证。
 
 ## 固定模型与额外实例
 
@@ -82,7 +94,7 @@ web-search-enhanced:
 旧全局配置不会自动变成 V2 默认。设置页提供显式导入：
 
 - configured → custom:legacy 固定连接，保留地址、模型、凭据引用和协议参数。
-- current-session → builtin:session-model，但明确显示宿主能力缺失。
+- current-session → builtin:session-model，按当前 Session 的实际路由解析；不支持的具体配置显示原因。
 - fallbackModel 不再执行，不跨服务兜底。
 - 明文 apiKey 必须先手工移入 DSH Credentials 并从旧配置删除，插件不复制秘密。
 - 导入只修改新会话默认，不覆盖已有 Session 选择。重置设置不删除凭据。

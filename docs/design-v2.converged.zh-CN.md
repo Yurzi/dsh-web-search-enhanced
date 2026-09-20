@@ -279,6 +279,20 @@ web-search-enhanced:
 
 不支持搜索不阻断聊天。用户可以在输入区立即切换到结构化连接。当前会话模型的身份不作为权限授权凭据，仍服从宿主工具与会话访问控制。
 
+### 5.3 重构首版定稿：复用已有跟随解析
+
+跟随不是宿主新增 API 的前置需求。以基线 src/index.ts 的 currentSelection / routeProfile / resolveRuntimeConfig 为功能基线，迁入 V2 的 src/dsh/session-model.ts：
+
+1. 从工具调用所属 exec.agent.session 的已提交 header 取完整 provider/model；只有尚无 header 才用该 agent options。
+2. 从 llm-pi-ai.providers 配置快照读取协议、endpoint、apiKeyEnv；目录缺省值仅通过已核验 pi-ai adapter 目录补齐，不猜域名/协议，不包装 fetch。
+3. 当前 rc.2 的模型级覆盖不能改 endpoint/API/凭据，遵守宿主契约而不是按设计示意虚构字段。
+4. 首版支持显式 apiKeyEnv 的普通 HTTP API Key 路由；缺引用、scoped credential record、OAuth/订阅、自定义 headers 或未知协议明确拒绝，不能借用固定连接凭据或静默 fallback。
+5. agent/request 按 agent/turn/step 冻结无密钥配置；工具执行按实际 provider/model 区分缓存条目，配置变化在下一 step 采样。adapter 被替换时旧请求失败。
+6. 固定与跟随共用同一模型执行层及 Credentials.resolve；客户端根据每个 Session 的实际解析和 Credentials.describe 显示状态，不再一律标记宿主不支持。
+7. 空白 Session 首消息前选择、耐久删除、历史 fork 的完整目标仍独立保留；首版使用显式新会话默认和已有 Session 槽，不为它们阻塞常规跟随能力。
+
+这些是首版支持边界；测试与未验证项以 [实施记录](v2-implementation.zh-CN.md) 为准，不宣称已完成真实供应商调用或宿主完整 LLM loop 的端到端验证。
+
 ## 6. 顶层实时性
 
 ### 6.1 明确定义，避免错误统一
@@ -545,4 +559,4 @@ src/
 - dsh-web/lib/types/types.d.ts:14–51,98–103：Provider 请求、结果和取消契约。
 - dsh-tool-web/lib/index.js:189–240,305–313：多查询聚合与结果投影。
 
-本次仅新增设计文档，未修改插件实现、DSH 宿主、运行配置或用户凭据。
+最初设计调研未修改实现。后续首版定稿与实际实现以 §5.3 和实施记录为准；未修改 DSH 宿主、运行配置或用户凭据。
