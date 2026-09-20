@@ -46,7 +46,7 @@ export async function searchStructured(
   adapter: StructuredAdapter,
   request: WebSearchRequest,
   config: { endpoint: string; options?: Record<string, unknown> },
-  context: { freshness: Freshness; apiKey: string; signal?: AbortSignal; fetcher?: typeof fetch; diagnose?: (facts: FreshnessDiagnostic) => void },
+  context: { freshness: Freshness; apiKey?: string; keyless?: boolean; signal?: AbortSignal; fetcher?: typeof fetch; diagnose?: (facts: FreshnessDiagnostic) => void },
 ): Promise<WebSearchResult> {
   if (context.signal?.aborted) throw failure('search aborted', 'WEB_ABORTED')
   const options = validateStructuredOptions(adapter, config.options)
@@ -56,13 +56,15 @@ export async function searchStructured(
   if (!['http:', 'https:'].includes(endpoint.protocol) || endpoint.username || endpoint.password || endpoint.search || endpoint.hash) throw failure('invalid search endpoint')
   if (typeof request.query !== 'string' || !request.query.trim() || request.query.length > (adapter === 'firecrawl' ? 500 : 10_000)) throw failure('invalid search query')
   if (request.maxResults !== undefined && (!Number.isSafeInteger(request.maxResults) || request.maxResults < 0)) throw failure('invalid result limit')
-  if (typeof context.apiKey !== 'string' || !context.apiKey.trim() || /[\r\n]/.test(context.apiKey)) throw failure('missing or invalid API key', 'WEB_PROVIDER_CREDENTIAL_MISSING')
+  const anonymous = context.keyless === true
+  if (anonymous && (adapter !== 'firecrawl' || endpoint.href !== 'https://api.firecrawl.dev/v2/search' || context.apiKey !== undefined)) throw failure('invalid keyless REST route')
+  if (!anonymous && (typeof context.apiKey !== 'string' || !context.apiKey.trim() || /[\r\n]/.test(context.apiKey))) throw failure('missing or invalid API key', 'WEB_PROVIDER_CREDENTIAL_MISSING')
   if (request.maxResults === 0) return { sources: [], truncated: false }
   const limit = request.maxResults === undefined ? undefined : Math.min(request.maxResults, adapter === 'tavily' ? 20 : 100)
   const headers: Record<string, string> = { accept: 'application/json' }
   const body: Record<string, unknown> = { ...options, query: request.query }
-  if (adapter === 'exa' || adapter === 'tinyfish') headers['x-api-key'] = context.apiKey
-  else headers.authorization = 'Bearer ' + context.apiKey
+  if (adapter === 'exa' || adapter === 'tinyfish') headers['x-api-key'] = context.apiKey ?? ''
+  else if (context.apiKey) headers.authorization = 'Bearer ' + context.apiKey
   if (adapter === 'firecrawl') {
     body.sources = [{ type: 'web' }]
     if (limit !== undefined) body.limit = limit

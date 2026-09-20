@@ -12,4 +12,5 @@
 - insert:
     - id: web-search-enhanced
       name: dsh-web-search-enhanced
-      config: {} # Catalog defaults stay in code; credentials do not auto-select a service.
+      config:
+        defaultConnection: builtin:exa # Explicit zero-key default for new Sessions; never replaces a saved selection.

@@ -2,6 +2,15 @@
 
 All notable changes to the `dsh-web-search-enhanced` package will be documented in this file.
 
+## [Unreleased] — V2 branch
+
+- Add explicit Exa keyless MCP and Firecrawl keyless REST access, with personal API Key modes and no automatic credential/provider fallback.
+- Default newly initialized Sessions to Exa through the installation composition patch; preserve saved selections.
+- Fix late Storage Domain activation and permanently cached open failures; retain actionable snapshot errors and allow recovery.
+- Redesign settings and session selector using DSH theme tokens, guided connection fields, accessible controls, and responsive layouts.
+- Add transport, integration and React rendering regressions; consolidate current documentation and retain isolated UI previews.
+- Live verification: Exa succeeds; Firecrawl denies this environment anonymous IP access. No plugin installation or publication performed.
+
 ## [0.0.6] - 2026-09-11
 
 ### Changed

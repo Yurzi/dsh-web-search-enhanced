@@ -7,6 +7,7 @@ export interface SearchSnapshot {
   readonly selection: Readonly<Selection>; readonly freshness: Freshness
   readonly connection?: Readonly<Connection>
   readonly error?: string
+  readonly errorCode?: string
 }
 function freeze<T>(value: T): T {
   if (value && typeof value === 'object') { for (const child of Object.values(value)) freeze(child); Object.freeze(value) }
@@ -16,12 +17,12 @@ function freeze<T>(value: T): T {
 export class ExecutionContexts {
   private snapshots = new WeakMap<object, SearchSnapshot>()
   private execution = new AsyncLocalStorage<{ snapshot: SearchSnapshot; binding?: FixedBinding; bindingError?: string }>()
-  capture(agent: object, sessionId: string, turn: number, step: number, selection: Selection, settings: ResolvedSettings, error?: string): SearchSnapshot {
+  capture(agent: object, sessionId: string, turn: number, step: number, selection: Selection, settings: ResolvedSettings, error?: string, errorCode?: string): SearchSnapshot {
     const previous = this.snapshots.get(agent)
-    if (previous?.turn === turn && previous.step === step) return previous
+    if (previous?.turn === turn && previous.step === step && previous.errorCode !== 'WEB_SEARCH_STORAGE_UNAVAILABLE') return previous
     const connection = selection.connectionId === null ? undefined : settings.connections[selection.connectionId]
-    const snapshot: SearchSnapshot = freeze(structuredClone({ sessionId, turn, step, selection, freshness: settings.freshness,
-      ...(connection ? { connection } : {}), ...(error ? { error } : {}) }))
+    const snapshot: SearchSnapshot = freeze(structuredClone({ sessionId, turn, step, selection: { connectionId: selection.connectionId, revision: selection.revision }, freshness: settings.freshness,
+      ...(connection ? { connection } : {}), ...(error ? { error } : {}), ...(errorCode ? { errorCode } : {}) }))
     this.snapshots.set(agent, snapshot)
     return snapshot
   }

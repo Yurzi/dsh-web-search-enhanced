@@ -46,7 +46,7 @@ class FixtureCodeRuntime extends CodeRuntime {
     return { logs: [], value: await tools.functions.web_search!({ queries: ['ptc one', 'ptc two'] }) }
   }
 }
-async function host(root?: string, mode: 'native' | 'ptc' = 'native') {
+async function host(root?: string, mode: 'native' | 'ptc' = 'native', deferStorage = false) {
   if (!root) {
     root = await mkdtemp(join(tmpdir(), 'search-host-test-'))
     const dir = root
@@ -56,7 +56,7 @@ async function host(root?: string, mode: 'native' | 'ptc' = 'native') {
   cleanups.push(() => ctx.fiber.dispose())
   new Storage(ctx)
   StorageJson.apply(ctx, { root })
-  await StorageDomain.apply(ctx, { backend: 'json' })
+  if (!deferStorage) await StorageDomain.apply(ctx, { backend: 'json' })
   new WebRuntime(ctx, { searchProvider: 'enhanced-search' })
   new TypertRegistry(ctx)
   new Gateway(ctx, {})
@@ -82,7 +82,7 @@ async function host(root?: string, mode: 'native' | 'ptc' = 'native') {
   let settings = resolveSettings(config)
   const bridge = installBridge(ctx, () => settings)
   await vi.waitFor(() => expect(ctx.get('searchConnections')).toBeDefined())
-  await bridge.runtime.selections()
+  if (!deferStorage) await bridge.runtime.selections()
   const invoke = (method: 'get' | 'set', request: Record<string, unknown>) => ctx.typertGateway.invoke({ namespace: 'searchConnections', method, args: { request } }) as Promise<SelectionView>
   const capture = async (id = 'one', step = 0) => {
     const payload = { agent: agents.get(id)!, turn: 1, step, signal: new AbortController().signal }
@@ -303,5 +303,58 @@ describe('follow-session model through installed DSH tools and remotes', () => {
     expect((await h.execute('one')).isError).toBe(true);expect(f.fetcher).not.toHaveBeenCalled()
     await h.capture('one',1)
     expect((await h.execute('one')).isError).toBe(false)
+  })
+})
+
+describe('storage activation and snapshot recovery', () => {
+  it('recovers the same request step after late storage-domain activation without blocking inference', async () => {
+    const h = await host(undefined, 'native', true)
+    const fetcher = successTransport()
+    await h.capture()
+    expect(h.bridge.contexts.peek(h.agents.get('one')!)?.errorCode).toBe('WEB_SEARCH_STORAGE_UNAVAILABLE')
+    expect((await h.execute('one')).isError).toBe(true)
+    expect(fetcher).not.toHaveBeenCalled()
+    await StorageDomain.apply(h.ctx, { backend:'json' })
+    await h.capture()
+    expect(h.bridge.contexts.peek(h.agents.get('one')!)?.error).toBeUndefined()
+    expect((await h.execute('one')).isError).toBe(false)
+  })
+  it('reopens a transiently failing domain and never caches the rejection for the plugin lifetime', async () => {
+    const h = await host(undefined, 'native', true)
+    successTransport()
+    await StorageDomain.apply(h.ctx, { backend:'json' })
+    const open = vi.spyOn(h.ctx.storageDomain, 'open').mockRejectedValueOnce(new Error('sensitive backend path'))
+    await h.capture()
+    const failed = await h.execute('one')
+    expect(failed.isError).toBe(true)
+    expect(JSON.stringify(failed)).not.toContain('sensitive backend path')
+    await h.capture()
+    expect((await h.execute('one')).isError).toBe(false)
+    expect(open).toHaveBeenCalledTimes(2)
+  })
+  it('keyless mode bypasses credentials and keyed mode changes only on the next step', async () => {
+    const h = await host()
+    h.changeSettings({version:2,defaultConnection:'builtin:firecrawl',freshness:'realtime'})
+    const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
+      const body = JSON.parse(String(init?.body))
+      if (body.method === 'initialize') return Response.json({jsonrpc:'2.0',id:body.id,result:{protocolVersion:'2025-06-18',capabilities:{},serverInfo:{name:'fixture',version:'1'}}})
+      if (body.method === 'notifications/initialized') return new Response(null,{status:202})
+      if (body.method === 'tools/call') return Response.json({jsonrpc:'2.0',id:body.id,result:{content:[{type:'text',text:JSON.stringify({web:[{url:'https://evidence.invalid',title:'Fixture',description:'content'}]})}]}})
+      return Response.json({success:true,data:{web:[{url:'https://evidence.invalid',description:'rest'}]}})
+    })
+    vi.stubGlobal('fetch',fetcher)
+    const view = await h.invoke('get',{sessionId:'one'})
+    expect(view.connections.find(c=>c.id==='builtin:firecrawl')).toMatchObject({configured:true,keyless:true})
+    await h.capture()
+    expect((await h.execute('one')).isError).toBe(false)
+    expect(h.credentials.resolve).not.toHaveBeenCalled()
+    expect(fetcher.mock.calls.every(([url])=>url==='https://api.firecrawl.dev/v2/search')).toBe(true)
+    expect(fetcher.mock.calls.every(([,init])=>!new Headers(init?.headers).has('authorization'))).toBe(true)
+    expect(h.bridge.diagnostics().at(-1)?.requested).toBe('realtime')
+    h.changeSettings({version:2,connections:{'builtin:firecrawl':{access:'api-key'}}})
+    await h.capture('one',1)
+    expect((await h.execute('one')).isError).toBe(false)
+    expect(h.credentials.resolve).toHaveBeenCalledOnce()
+    expect(fetcher.mock.calls.at(-1)?.[0]).toBe('https://api.firecrawl.dev/v2/search')
   })
 })

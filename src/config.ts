@@ -6,7 +6,7 @@ import { validateStructuredOptions } from './adapters/structured.ts'
 export interface FixedBinding { mode: 'fixed'; protocol: SearchProtocol; model: string; baseURL: string; credentialRef: string }
 export interface Connection {
   id: string; label: string; disabled: boolean; kind: 'structured' | 'model'
-  adapter?: StructuredAdapter; endpoint?: string; credentialRef?: string
+  adapter?: StructuredAdapter; endpoint?: string; credentialRef?: string; keyless?: boolean; access?: 'keyless' | 'api-key'
   binding?: FixedBinding | { mode: 'session' }
   options: Record<string, unknown>
   optionsByProtocol?: Partial<Record<SearchProtocol, Record<string, unknown>>>
@@ -64,17 +64,23 @@ export function resolveSettings(config: V2Config = {}): ResolvedSettings {
   const freshness = config.freshness ?? 'auto'
   if (!['auto', 'fresh', 'realtime'].includes(freshness)) throw new Error('invalid freshness')
   const connections: Record<string, Connection> = Object.create(null)
-  for (const [id, c] of Object.entries(CATALOG)) connections[id] = { id, kind: 'structured', label: c.label, disabled: false, adapter: c.adapter, endpoint: c.endpoint, credentialRef: c.credentialRef, options: {} }
+  for (const [id, c] of Object.entries(CATALOG)) connections[id] = { id, kind: 'structured', label: c.label, disabled: false, adapter: c.adapter, endpoint: c.endpoint, credentialRef: c.credentialRef, keyless: 'keyless' in c && c.keyless === true, access: 'keyless' in c && c.keyless ? 'keyless' : 'api-key', options: {} }
   connections[SESSION_MODEL_ID] = { id: SESSION_MODEL_ID, kind: 'model', label: SESSION_MODEL_LABEL, disabled: false, binding: { mode: 'session' }, options: {} }
   for (const [id, raw] of Object.entries(config.connections ?? {})) {
     const c = record(raw, 'connection')
     const builtin = connections[id]
     if (builtin) {
-      keys(c, id === SESSION_MODEL_ID ? ['disabled', 'optionsByProtocol'] : ['label', 'disabled', 'credentialRef', 'options'], id)
+      keys(c, id === SESSION_MODEL_ID ? ['disabled', 'optionsByProtocol'] : ['label', 'disabled', 'credentialRef', 'access', 'options'], id)
       if (c.disabled !== undefined && typeof c.disabled !== 'boolean') throw new Error('disabled must be boolean')
       if (c.label !== undefined) builtin.label = text(c.label, 'label')
       if (c.disabled !== undefined) builtin.disabled = c.disabled
       if (c.credentialRef !== undefined) builtin.credentialRef = reference(c.credentialRef)
+      if (c.access !== undefined) {
+        if (c.access !== 'keyless' && c.access !== 'api-key') throw new Error('invalid access mode')
+        if (c.access === 'keyless' && id !== 'builtin:exa' && id !== 'builtin:firecrawl') throw new Error('this connection requires an API key')
+        builtin.access = c.access
+        builtin.keyless = c.access === 'keyless'
+      }
       if (c.options !== undefined) builtin.options = structuredClone(record(c.options, 'options'))
       if (c.optionsByProtocol !== undefined) {
         const opts = record(c.optionsByProtocol, 'optionsByProtocol'); keys(opts, protocols, 'optionsByProtocol')
@@ -95,12 +101,15 @@ export function resolveSettings(config: V2Config = {}): ResolvedSettings {
       if (!preset) throw new Error('unsupported structured adapter')
       const url = c.endpoint === undefined ? preset.endpoint : endpoint(c.endpoint)
       if (url !== preset.endpoint && c.trustedEndpoint !== true) throw new Error('custom endpoint requires trustedEndpoint confirmation')
-      connections[id] = { ...common, kind: 'structured', adapter: preset.adapter, endpoint: url, credentialRef: reference(c.credentialRef), options: structuredClone(record(c.options ?? {}, 'options')) }
+      connections[id] = { ...common, kind: 'structured', adapter: preset.adapter, endpoint: url, credentialRef: reference(c.credentialRef), keyless: false, options: structuredClone(record(c.options ?? {}, 'options')) }
     } else throw new Error('invalid connection kind')
   }
   // Freshness-owned and secret fields must never enter a request snapshot.
   for (const c of Object.values(connections)) {
-    if (c.kind === 'structured') c.options = validateStructuredOptions(c.adapter!, c.options)
+    if (c.kind === 'structured') {
+      c.options = validateStructuredOptions(c.adapter!, c.options)
+      if (c.keyless && c.adapter === 'exa' && Object.keys(c.options).length) throw new Error('keyless currently supports query and count only; use API Key mode for advanced options')
+    }
   }
   return { freshness, ...(config.defaultConnection === undefined ? {} : { defaultConnection: text(config.defaultConnection, 'defaultConnection') }), connections }
 }

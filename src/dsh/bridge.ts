@@ -63,21 +63,34 @@ export function installBridge(ctx: Context, settings: () => ResolvedSettings) {
   const follow = new WeakMap<SearchSnapshot, { request?: FollowRequest; error?: string }>()
   const diagnostics: Readonly<FreshnessDiagnostic & { sessionId: string; connectionId: string | null; step: number }>[] = []
   ctx.effect(() => () => { diagnostics.length = 0 }, 'private search diagnostics')
-  let state: Promise<SessionSelections> | undefined
-  ctx.inject(['storageDomain'], storageCtx => {
-    storageCtx.effect(() => {
-      const domain = storageCtx.storage.domain.open(selectionDomain)
-      const opened = domain.then(d => new SessionSelections(d.table('selections')))
-      state = opened
-      void opened.catch(() => {})
-      return async () => { if (state === opened) state = undefined; await domain.then(d => d.close(), () => {}) }
+  let openSelections: (() => Promise<SessionSelections>) | undefined
+  const storageMount = ctx.inject(['storageDomain'], storageCtx => {
+    let domain: ReturnType<typeof storageCtx.storageDomain.open<typeof selectionDomain>> | undefined
+    let state: Promise<SessionSelections> | undefined
+    const open = () => {
+      if (!state) {
+        domain = storageCtx.storageDomain.open(selectionDomain)
+        state = domain.then(d => new SessionSelections(d.table('selections')))
+        void state.catch(() => { state = undefined; domain = undefined })
+      }
+      return state
+    }
+    openSelections = open
+    storageCtx.effect(() => async () => {
+      if (openSelections === open) openSelections = undefined
+      await domain?.then(d => d.close(), () => {})
     }, 'search selection domain')
   })
   const runtime: BridgeRuntime = {
     settings,
     async selections() {
-      if (!state) throw searchError('会话搜索存储不可用（需要 DSH Storage Domain 持久后端）', 'WEB_SEARCH_STORAGE_UNAVAILABLE')
-      try { return await state } catch { throw searchError('会话搜索存储打开失败', 'WEB_SEARCH_STORAGE_UNAVAILABLE') }
+      // The provider may mount before the scoped storage effect. Await the actual
+      // Cordis activation instead of permanently freezing that startup race.
+      if (!openSelections && ctx.get('storageDomain')) await storageMount
+      if (!openSelections) throw searchError('搜索存储尚未就绪：需要 DSH storage-domain 及持久后端；请检查插件依赖', 'WEB_SEARCH_STORAGE_UNAVAILABLE')
+      try { return await openSelections() } catch {
+        throw searchError('搜索存储打开失败；请检查 DSH 存储后端，下次请求会重新尝试', 'WEB_SEARCH_STORAGE_UNAVAILABLE')
+      }
     },
     async describe(agent) {
       const credentials = ctx.get('credentials')
@@ -85,17 +98,18 @@ export function installBridge(ctx: Context, settings: () => ResolvedSettings) {
         let ref = c.kind === 'structured' ? c.credentialRef : c.binding?.mode === 'fixed' ? c.binding.credentialRef : undefined
         let configured = false, reason: string | undefined
         if (c.disabled) reason = '连接已禁用'
+        else if (c.keyless === true && (c.adapter === 'exa' || c.adapter === 'firecrawl')) configured = true
         else if (c.binding?.mode === 'session') {
           try {
             if (!agent) throw new FollowModelError('需要当前会话模型才能判断可用性')
             ref = new FollowRequest(captureFollowSettings(ctx)).resolve(agent).credentialRef
           } catch (error) { reason = error instanceof FollowModelError ? error.message : FOLLOW_UNAVAILABLE }
         }
-        if (!reason && ref) {
+        if (!reason && !configured && ref) {
           try { configured = (await credentials?.describe(credentialRef(ref)))?.configured === true } catch { /* fail closed, no credential details */ }
           if (!configured) reason = '请配置 DSH Credential: ' + ref
         }
-        return { id: c.id, label: c.label, kind: c.kind, configured, ...(reason ? { reason } : {}), ...(ref ? { credentialRef: ref } : {}) }
+        return { id: c.id, label: c.label, kind: c.kind, configured, ...(c.keyless ? { keyless: true } : {}), ...(reason ? { reason } : {}), ...(ref ? { credentialRef: ref } : {}) }
       }))
     },
     async initialize(session, agent) {
@@ -115,7 +129,7 @@ export function installBridge(ctx: Context, settings: () => ResolvedSettings) {
   }
   ctx.on('agent/request', async (payload, next) => {
     const previous = contexts.peek(payload.agent)
-    if (!previous || previous.turn !== payload.turn || previous.step !== payload.step) {
+    if (!previous || previous.errorCode === 'WEB_SEARCH_STORAGE_UNAVAILABLE' || previous.turn !== payload.turn || previous.step !== payload.step) {
       try {
         const selection = await abortable(runtime.initialize(payload.agent.session, payload.agent), payload.signal)
         const snapshot = contexts.capture(payload.agent, payload.agent.session.id, payload.turn, payload.step, selection, settings())
@@ -123,9 +137,13 @@ export function installBridge(ctx: Context, settings: () => ResolvedSettings) {
           try { follow.set(snapshot, { request: new FollowRequest(captureFollowSettings(ctx)) }) }
           catch { follow.set(snapshot, { error: '无法读取当前会话 provider 配置；请检查 DSH settings' }) }
         }
-      } catch {
-        // Search misconfiguration must not block ordinary chat; actual search fails explicitly.
-        contexts.capture(payload.agent, payload.agent.session.id, payload.turn, payload.step, { connectionId: null, revision: 0 }, { freshness: 'auto', connections: {} }, '本请求未能冻结会话搜索状态；请检查存储及配置后发起新请求')
+      } catch (error) {
+        // Keep a sanitized category, not the catch-all that previously hid every
+        // startup/storage/migration fault behind the same unhelpful message.
+        const code = (error as { code?: string })?.code
+        const category = code === 'WEB_SEARCH_STORAGE_UNAVAILABLE' ? code : code === 'WEB_SEARCH_MIGRATION_REQUIRED' ? code : 'WEB_SEARCH_CONFIG_INVALID'
+        const message = category === 'WEB_SEARCH_STORAGE_UNAVAILABLE' ? '搜索存储暂不可用：请检查 DSH storage-domain 及持久后端；下一次请求会重试' : category === 'WEB_SEARCH_MIGRATION_REQUIRED' ? '检测到旧版搜索配置：请在设置 → 搜索连接中导入旧配置' : '搜索配置无法解析：请在设置 → 搜索连接中检查配置'
+        contexts.capture(payload.agent, payload.agent.session.id, payload.turn, payload.step, { connectionId: null, revision: 0 }, { freshness: 'auto', connections: {} }, message, category)
       }
     }
     return next() // never add metadata or replace the LLM configuration

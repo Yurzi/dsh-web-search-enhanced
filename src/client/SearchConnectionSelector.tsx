@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
 import { SESSION_MODEL_ID, SESSION_MODEL_LABEL, type Freshness } from '../catalog.ts'
+import { selectorCss } from './search-selector.css.ts'
 
 export interface SearchConnectionView {
   id: string; label: string; kind: 'model' | 'structured'; configured: boolean
-  reason?: string; credentialRef?: string
+  keyless?: boolean; reason?: string; credentialRef?: string
 }
 export interface SearchSelectionResponse {
   selection: { connectionId: string | null; revision: number }
@@ -91,12 +92,13 @@ function SessionSelector({ sessionId, remote }: SearchConnectionSelectorProps) {
   const connections = useMemo(() => discoverableConnections(value?.connections ?? []), [value?.connections])
   const selected = value?.selection.connectionId
   const current = connections.find(c => c.id === selected)
-  return <div style={{ maxWidth: '100%', minWidth: 0, fontSize: 12 }}>
-    <label>搜索连接（当前会话） <select aria-label="当前会话搜索连接" style={{ maxWidth: '100%' }} disabled={!value || pending} value={selected ?? ''} onChange={event => { if (value) void controller.current?.select(event.target.value || null, value.selection.revision) }}>
+  return <div className="v2s-selector">
+    <style>{selectorCss}</style>
+    <label className="v2s-selector-control" title="仅影响当前会话；下一次模型请求生效"><span>搜索</span><select aria-label="当前会话搜索连接" disabled={!value || pending} value={selected ?? ''} onChange={event => { if (value) void controller.current?.select(event.target.value || null, value.selection.revision) }}>
       <option value="">{value ? '未选择搜索连接' : '正在读取…'}</option>
       {selected && !current ? <option value={selected}>已失效 / 已删除：{selected}</option> : null}
       {(['model', 'structured'] as const).map(kind => <optgroup key={kind} label={kind === 'model' ? '模型搜索' : '结构化搜索'}>
-        {connections.filter(c => c.kind === kind).map(c => <option key={c.id} value={c.id} disabled={!c.configured && c.id !== SESSION_MODEL_ID}>{c.label}{c.configured ? '' : '（不可用）'}</option>)}
+        {connections.filter(c => c.kind === kind).map(c => <option key={c.id} value={c.id} disabled={!c.configured && c.id !== SESSION_MODEL_ID}>{c.label}{c.keyless ? ' · 免 Key' : c.configured ? '' : '（不可用）'}</option>)}
       </optgroup>)}
     </select></label>
     {value ? <span> · 内容实时性：{freshnessLabels[value.freshness]}（全局）</span> : null}

@@ -4,6 +4,7 @@ import type {} from '@deepseek-ai/dsh-settings'
 import z from '@deepseek-ai/schemastery'
 import { resolveSettings, importLegacy, type V2Config } from './config.ts'
 import { installBridge } from './dsh/bridge.ts'
+import { searchError } from './search/service.ts'
 export const name = 'web-search-enhanced'
 export const inject = ['web']
 export const DEFAULT_PROVIDER_ID = 'enhanced-search'
@@ -31,7 +32,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   installBridge(ctx, () => {
     const value = current()
     // Old global routes must be imported deliberately rather than silently defaulted.
-    if (value.version !== 2 && ['modelMode', 'protocol', 'baseURL', 'model', 'apiKeyEnv'].some(k => (value as Record<string, unknown>)[k] !== undefined)) throw new Error('Legacy settings require explicit V2 import')
+    if (value.version !== 2 && ['modelMode', 'protocol', 'baseURL', 'model', 'apiKeyEnv'].some(k => (value as Record<string, unknown>)[k] !== undefined)) throw searchError('请在搜索连接设置中导入旧版配置', 'WEB_SEARCH_MIGRATION_REQUIRED')
     return resolveSettings(value)
   })
 }

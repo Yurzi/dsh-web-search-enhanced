@@ -1,74 +1,76 @@
-# dsh-web-search-enhanced — V2 工作分支
+# dsh-web-search-enhanced
 
-DSH 原生 web_search 的会话级搜索连接插件。此分支尚未发布，版本号保持 0.0.6；npm 上的 0.0.6 不是本分支产物。
+为 DSH 原生 web_search 提供会话级搜索连接：对话模型与搜索连接独立选择，支持免 Key、个人 API Key、固定模型及跟随会话模型。
 
-## 当前实现与边界
+> 当前为 refactor/search-connections-v2 分支构建，尚未发布。版本号仍为 0.0.6；npm 上的同号版本不是此分支产物。基于 DSH 0.1.5-rc.2 契约验证。
 
-- **已有 Session**：通过官方 conversation.input.right 列表槽追加搜索连接选择器，不替换对话模型或 composer。Session 独立选择，服务端持久化及 revision 冲突检查，切换影响后续推理 step。
-- **结构化搜索**：Firecrawl、Exa、Tavily、Tinyfish。目录默认值留在代码，只填写 DSH Credentials 即可配置。
-- **固定模型**：Anthropic Messages、OpenAI Responses、OpenAI Chat Completions 共用协议解析器。协议兼容不意味着模型支持服务端搜索，请核实能力和价格。
-- **跟随会话模型**：已接通 Session request header → DSH settings → Credentials。复用旧版路由解析思路，按请求冻结配置，不借用固定连接的 Key，不暗中换服务；具体支持边界见下文。
-- **空白会话**：宿主在没有 sessionId 时不渲染该槽，没有首条 prompt 前等待插件草稿的接口；首条消息前的选择器尚未接通。可以预设新会话默认连接。
+## 开始使用
 
-**首版插件侧功能已实现；空白会话首消息前选择等完整目标仍有边界。** 证据、验证范围与剩余宿主配合项见 [实施记录](docs/v2-implementation.zh-CN.md)。
+1. 安装本分支构建的插件包。安装补丁为新会话明确选择 **Exa（免 Key）**，不覆盖已有 Session 的选择。
+2. 在已有会话输入区的“搜索连接”中切换服务，对话模型不随之变化。
+3. 设置 → 搜索连接，可修改新会话默认、内容实时性和访问方式。自定义连接使用普通表单，JSON 仅用于高级选项。
 
-## Key-only 配置
+| 连接 | 默认方式 | 个人 API 凭据引用 | 行为 |
+| --- | --- | --- | --- |
+| Exa | 免 Key / 官方 MCP | EXA_API_KEY | 无需登录，有公共限额 |
+| Firecrawl | 免 Key / 官方 Search REST | FIRECRAWL_API_KEY | 受 IP 和公共额度限制 |
+| Tavily | 个人 API Key | TAVILY_API_KEY | 缺 Key 时不可执行 |
+| Tinyfish | 个人 API Key | TINYFISH_API_KEY | Search 免费不等于匿名 |
+| 跟随会话模型 | 当前 Session 的模型连接 | provider 的 apiKeyEnv | 不重复保存模型或 Key |
 
-设置 → 插件 → 搜索连接，展开对应凭据编辑器。只调用 DSH Credentials，不保存目录、不发起探测。
+Exa / Firecrawl 的“免 Key / 个人 API Key”是**显式选择**。保存 Key 不会切换访问方式，限流或失败也不会偷偷换 Key 或服务。
 
-| 连接 ID | 默认 Credential Ref | 目录 endpoint |
-| --- | --- | --- |
-| builtin:firecrawl | FIRECRAWL_API_KEY | https://api.firecrawl.dev/v2/search |
-| builtin:exa | EXA_API_KEY | https://api.exa.ai/search |
-| builtin:tavily | TAVILY_API_KEY | https://api.tavily.com/search |
-| builtin:tinyfish | TINYFISH_API_KEY | https://api.search.tinyfish.ai |
-| builtin:session-model | 当前 provider 的 apiKeyEnv | 当前 provider 的地址／目录默认，不保存副本 |
+- Exa 免 Key 调用 https://mcp.exa.ai/mcp 。
+- Firecrawl 两种模式均调用 https://api.firecrawl.dev/v2/search ，匿名模式不发送 Authorization。
+- 本轮 Exa 真实匿名查询成功；Firecrawl 从当前出口 IP 返回 403、拒绝匿名访问。插件给出提示，不绕过上游限制。
+- “已配置 / 免 Key”表示本地条件满足，不代表权限、额度或网络健康验证。打开设置不探测供应商。
 
-“已配置”仅表示本地凭据齐备，**不是健康或余额验证**。没有 Key 不阻止普通聊天。安装不会遍历服务请求。内置地址不能覆盖；自建地址使用自定义连接，并显式确认信任。
+## 界面预览
 
-## 稀疏偏好与实时性
+实际 React 组件在隔离 Chromium 中渲染，**不是当前 DSH GUI 已安装或挂载的证明**。
+
+![桌面设置预览](docs/assets/settings-desktop.png)
+
+[深色预览](docs/assets/settings-dark.png) · [窄屏预览](docs/assets/settings-mobile.png)
+
+## 内容实时性
+
+顶层偏好在切换连接后保留，按请求冻结。它指内容缓存年龄，不是文章发布日期。
+
+| 模式 | Firecrawl（两种访问方式） | Exa 个人 API Key | Exa 免 Key / Tavily / Tinyfish / 模型 |
+| --- | --- | --- | --- |
+| 自动 | 默认 Search | 默认内容策略 | 默认行为 |
+| 优先新鲜 | 内联正文 maxAge=86400000 ms | contents.maxAgeHours=24 | 不支持时忽略 |
+| 优先实时 | 内联正文 maxAge=0 | contents.maxAgeHours=0 | 不伪造实时参数 |
+
+内联抓取可能增加延迟和额度消耗，参数不保证网页可抓取或真正实时。私有诊断记录 default/applied/ignored/partial，不扩展宿主结果或 Session 事件。
+
+Exa 免 Key 首期仅支持 query 和数量，高级 options 需切换个人 API Key。Firecrawl 两种模式共用受限 options。
+
+## 跟随会话模型
+
+使用当前工具调用所属 exec.agent.session.requestHeader().config 中的完整 provider/model；只有尚无请求头才使用同一 agent options，不混拼字段。
+
+从 llm-pi-ai.providers[provider] 解析 api、baseURL、apiKeyEnv。内置目录缺省地址/协议可由只读 adapter 目录补齐，显式配置不依赖兼容入口。支持 Anthropic Messages、OpenAI Responses、OpenAI Chat Completions。
+
+首期要求显式 apiKeyEnv，统一通过 Credentials 解析；不重建 OAuth/订阅/scoped credential records，不透传自定义 headers。当前 rc.2 不支持 model 级 endpoint/API/凭据覆盖，插件不虚构这些字段。协议兼容不保证模型支持服务端搜索。
+
+## 凭据与自定义连接
+
+所有 Key 通过 DSH Credentials 保存和解析，不写入 settings、日志或快照。设置只保存引用与稀疏差异，重置不删除 Key。
+
+固定模型表单包含名称、模型 ID、协议、地址、凭据引用。自定义服务使用 custom: 开头的 ID，新地址需显式信任确认。高级 JSON 对应配置示例：
 
 ~~~yaml
 web-search-enhanced:
   version: 2
   defaultConnection: builtin:exa
-  freshness: realtime
-~~~
-
-默认连接只用于 Session 首次初始化。没有默认且恰好一个本地可用连接时才自动选择；零个或多个保持未选择。失效的默认/会话 ID 保留并明确报错，不选别的服务。
-
-| freshness | Firecrawl | Exa | Tavily / Tinyfish / 模型 |
-| --- | --- | --- | --- |
-| auto | 普通 web 结果 | 默认内容缓存策略 | 忽略，不注入虚构参数 |
-| fresh | 内联 markdown，maxAge 24 小时 | contents.maxAgeHours = 24 | 同上 |
-| realtime | 内联 markdown，maxAge = 0 | contents.maxAgeHours = 0 | 同上 |
-
-切换连接不会重置顶层 freshness。偏好不保证页面可抓取或实时；缺少正文时不冒充实时内容。优先新鲜/实时可能增加费用和延迟。数量截断不表示新鲜度达标。插件只在私有、有界、无查询/Key 的诊断中记录 applied / ignored / partial，不伪装成 DSH 结果扩展字段，也不声称已验证实际新鲜度。
-
-## 跟随会话模型
-
-选择 builtin:session-model，或把它设为新会话默认。不必重复填写模型、地址或 Key。
-
-- 当前工具调用的 exec.agent.session.requestHeader().config 决定 provider/model；尚无 header 时才读取同一 agent 的 options，不混拼不完整 header。
-- 从 settings 的 llm-pi-ai.providers[provider] 读取 api、baseURL、apiKeyEnv。支持 anthropic-messages、openai-responses、openai-completions（映射为 openai-chat-completions）和 openai-chat-completions。
-- api/baseURL 缺省时，可通过已安装 pi-ai adapter 的只读目录补齐。此兼容入口仅用于目录默认值；显式配置不依赖它，接口缺失只影响缺省值补齐。
-- **首版要求 provider 显式配置 apiKeyEnv**，通过 DSH Credentials.resolve 读取；不重建 pi-ai scoped credential record、OAuth/订阅或 ambient auth。已有显式引用无需重新保存 Key。
-- 有自定义 headers、非 HTTP 传输、非法地址或未知协议时明确拒绝；不把其他认证秘密复制到快照。当前 rc.2 的 model entries/modelOverrides 不支持单独覆盖 endpoint、协议或 Key，插件也不虚构这些字段。
-- agent/request 冻结无密钥 provider 配置，同一步重试不重取；实际工具执行按已提交 provider/model 整体解析，多个查询复用绑定。设置变化在下一新 step 采样，adapter 替换或移除使旧请求明确失败。
-- 普通三协议路由不需要修改宿主。模型仍须支持相应服务端搜索；“已配置”不是能力或额度保证。
-
-## 固定模型与额外实例
-
-高级 JSON 编辑器支持新建/编辑，并单独勾选 endpoint 信任确认，服务器仍严格校验。示例不是模型搜索能力保证：
-
-~~~yaml
-web-search-enhanced:
-  version: 2
-  defaultConnection: custom:search-model
   connections:
+    builtin:exa:
+      access: api-key
     custom:search-model:
-      label: 专用搜索模型
       kind: model
+      label: 专用搜索模型
       trustedEndpoint: true
       binding:
         mode: fixed
@@ -78,46 +80,38 @@ web-search-enhanced:
         credentialRef: SEARCH_MODEL_API_KEY
 ~~~
 
-模型 options：apiVersion、toolIdentifier、maxTokens、maxUses、chatSearchMode、searchContextSize。没有任意 headers/body 透传。Anthropic 默认标识保留基线的 web_search_20260209，不保证适用于全部 compatible 网关。
+固定模型 options：apiVersion、toolIdentifier、maxTokens、maxUses、chatSearchMode、searchContextSize。跟随连接的 optionsByProtocol 按协议分组，不跨协议复用标识。
 
-额外结构化实例使用 custom:<id>、kind: structured、adapter、credentialRef、可选 endpoint/options。非目录地址必须 trustedEndpoint: true。首期 options 白名单：
+结构化 options：Firecrawl country/location/safe；Exa type（auto/fast/instant，仅个人 Key）；Tavily search_depth/topic；Tinyfish location/language/purpose/domain_type。没有任意 headers/body 透传。
 
-- Firecrawl：country、location、safe。
-- Exa：type = auto / fast / instant。
-- Tavily：search_depth、topic。
-- Tinyfish：location、language、purpose、domain_type。
+## 旧配置与错误恢复
 
-不开放覆盖 freshness 的底层参数。Tinyfish 不发送 limit，也不调用 Browser/Agent API；过多结果在本地截断。
+设置页显式导入旧配置：configured → custom:legacy，current-session → 跟随会话模型。fallbackModel 不再执行，明文 apiKey 必须先移入 Credentials。导入不覆盖已有 Session 选择。
 
-## 旧配置迁移
+旧的笼统“本请求未能冻结会话搜索状态”已拆分：
 
-旧全局配置不会自动变成 V2 默认。设置页提供显式导入：
+- **存储暂不可用**：等待 Cordis storage-domain 激活；打开失败后可重试，不终身缓存拒绝。恢复后同一 step 可重建失败快照。
+- **旧配置需要迁移**：到设置中导入，而不是提示所有连接不可用。
+- **配置解析失败**：修正设置后发起新模型请求。
+- **Firecrawl 拒绝匿名访问**：显式切换个人 API Key，或手动选择其他连接。
 
-- configured → custom:legacy 固定连接，保留地址、模型、凭据引用和协议参数。
-- current-session → builtin:session-model，按当前 Session 的实际路由解析；不支持的具体配置显示原因。
-- fallbackModel 不再执行，不跨服务兜底。
-- 明文 apiKey 必须先手工移入 DSH Credentials 并从旧配置删除，插件不复制秘密。
-- 导入只修改新会话默认，不覆盖已有 Session 选择。重置设置不删除凭据。
+必须使用 DSH Storage Domain 持久后端，不悄悄退化为 localStorage/内存。搜索配置错误不阻断普通聊天。
 
-旧 resolveConfig/createProvider/EnhancedSearchProvider 辅助导出为兼容保留；V2 安装入口不使用旧全局路由、备用模型或旧请求事件记录。
+## 边界
 
-## 持久化与安全
+- 已有 Session 使用官方 conversation.input.right 追加槽，无 DOM 劫持或 composer 替换。
+- 空白会话首消息前的独立选择器仍需宿主接入，当前由新会话默认处理。
+- fork 继承父会话当前选择，之后独立；不重建历史 fork 边界。耐久删除通知缺失时保留孤立记录，不把 session/disposed 当删除。
+- 保持原生 web_search 参数/结果及访问控制，原生/PTC 两条路径均有集成测试。
 
-- 存储域 web_search_enhanced / selections，继承宿主 Storage Domain 后端路由，必须使用持久后端。错误不降级为 localStorage。
-- Remote 先经过真实 SessionController.resolveAgent；CAS 在原子 update 内检查，成功在耐久写入后确认。
-- 按 agent + turn + step 冻结选择、配置与 freshness；同 step 重试、多查询和 PTC 不重取最新配置。凭据每次由冻结引用重新解析，撤销仍有效。
-- 只请求选中服务，禁止重定向，响应最大 2 MiB、超时 90 秒；取消覆盖 HTTP 与凭据等待。错误不包含上游正文、查询 URL、Key 或原始 cause。
-- 恢复优先已有记录；fork 首次初始化复制父会话当前选择，不声称重建历史 fork 边界。session/disposed 不是耐久删除；当前保留 orphan 记录，等待明确删除通知。
-
-## 构建与验证
-
-按 DSH 0.1.5-rc.2 实际声明与 JS 接口开发。linked 安装请先禁用插件再构建，避免重载干扰当前会话。
+## 开发验证
 
 ~~~sh
+pnpm install --frozen-lockfile
 pnpm run check
 ~~~
 
-本环境 pnpm run 启动器数据库错误仍存在。已安装工具的等价步骤：
+本环境 pnpm run 启动器有数据库错误时，已安装工具可等价执行：
 
 ~~~sh
 ./node_modules/.bin/tsc -p tsconfig.json --noEmit
@@ -126,15 +120,8 @@ node scripts/clean.mjs
 ./node_modules/.bin/tsc -p tsconfig.build.json
 ./node_modules/.bin/tsdown --config tsdown.config.ts
 node scripts/verify-package.mjs
-./node_modules/.bin/vitest run
 ~~~
 
-测试使用 fixture/mocked transport，没有真实供应商账号调用。GUI、完整 LLM 循环、真实 worker-thread 和 HTTP/WebSocket 载体需要另验。构建通过不等于运行中的 GUI 已更新。
+构建后运行 node scripts/preview-ui.mjs（可加 --dark）生成隔离组件预览 HTML，不启动另一个 DSH 服务。
 
-## API 参考与设计
-
-- [Firecrawl Search](https://docs.firecrawl.dev/api-reference/endpoint/search.md)
-- [Exa Search](https://exa.ai/docs/reference/search.md)
-- [Tavily Search](https://docs.tavily.com/documentation/api-reference/endpoint/search.md)
-- [Tinyfish Search](https://docs.tinyfish.ai/search-api/reference.md)
-- [收敛设计](docs/design-v2.converged.zh-CN.md) · [实施记录](docs/v2-implementation.zh-CN.md) · [MIT](LICENSE)
+[验证记录](docs/v2-implementation.zh-CN.md) · [架构设计](docs/design-v2.converged.zh-CN.md) · [MIT](LICENSE)
