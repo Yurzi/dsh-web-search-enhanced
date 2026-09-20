@@ -53,7 +53,7 @@ const ENDPOINT_SUFFIX: Record<SearchProtocol, string> = {
 /** Return the protocol-specific built-in search identifier. */
 export function defaultToolIdentifier(protocol: SearchProtocol): string {
   switch (protocol) {
-    case 'anthropic-messages': return 'web_search_20250305'
+    case 'anthropic-messages': return 'web_search_20260209'
     case 'openai-responses': return 'web_search'
     case 'openai-chat-completions': return 'web_search_options'
   }

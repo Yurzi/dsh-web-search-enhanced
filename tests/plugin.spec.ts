@@ -20,7 +20,7 @@ describe('host plugin contract', () => {
 
   it('resolves protocol-specific internal identifiers', () => {
     expect(resolveConfig({}).providerId).toBe(DEFAULT_PROVIDER_ID)
-    expect(resolveConfig({ protocol: 'anthropic-messages' }).toolIdentifier).toBe('web_search_20250305')
+    expect(resolveConfig({ protocol: 'anthropic-messages' }).toolIdentifier).toBe('web_search_20260209')
     expect(resolveConfig({ protocol: 'openai-responses' }).toolIdentifier).toBe('web_search')
     expect(resolveConfig({ protocol: 'openai-chat-completions' }).toolIdentifier).toBe('web_search_options')
     expect(resolveConfig({ protocol: 'openai-responses', toolIdentifier: 'web_search_preview', maxTokens: 9000 }))
