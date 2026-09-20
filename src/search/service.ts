@@ -6,7 +6,7 @@ import type { SearchSnapshot } from '../dsh/execution-context.ts'
 import { fetchJson, searchStructured } from '../adapters/structured.ts'
 import { freshnessDiagnostic, type FreshnessDiagnostic } from './diagnostics.ts'
 
-export const FOLLOW_UNAVAILABLE = '当前宿主未公开实际请求的安全搜索绑定；跟随会话模型暂不可用。请选择固定模型或结构化连接。'
+export const FOLLOW_UNAVAILABLE = '无法将当前会话模型解析为支持的搜索连接；请检查 provider 的协议、endpoint 和凭据引用。'
 export function searchError(message: string, code = 'WEB_PROVIDER_ERROR'): WebError { return new WebError('dsh-web-search-enhanced: ' + message, code) }
 export async function abortable<T>(pending: Promise<T>, signal?: AbortSignal): Promise<T> {
   if (signal?.aborted) { void pending.catch(() => {}); throw searchError('search aborted', 'WEB_ABORTED') }

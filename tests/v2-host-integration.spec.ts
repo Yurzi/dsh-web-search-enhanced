@@ -73,7 +73,7 @@ async function host(root?: string, mode: 'native' | 'ptc' = 'native') {
   ctx.provide('sessionProjections', { register: () => () => {}, onChanged: () => () => {} } as never)
   const controller = new SessionController(ctx, { nativeOpen: false })
   const authorize = vi.spyOn(controller, 'resolveAgent') // call-through: host ownership policy remains real
-  const credentials = { describe: vi.fn(async () => ({ configured: true })), resolve: vi.fn(async () => ({ value: 'fixture-secret-not-a-key' })) }
+  const credentials = { describe: vi.fn(async () => ({ configured: true })), resolve: vi.fn(async (_ref: unknown): Promise<{ value: string } | undefined> => ({ value: 'fixture-secret-not-a-key' })) }
   ctx.provide('credentials', credentials as never)
   ctx.provide('systemPrompt', { tools: () => () => {}, section: () => () => {}, getSectionOrder: () => 0 } as never)
   const substrate = new FixtureCodeRuntime(ctx)
@@ -204,6 +204,104 @@ describe('V2 installed DSH host integration (no network)', () => {
     expect(JSON.stringify(result)).not.toContain('fixture-secret-not-a-key')
     successTransport()
     await h.capture('one', 1)
+    expect((await h.execute('one')).isError).toBe(false)
+  })
+})
+
+function header(h: Awaited<ReturnType<typeof host>>, id: string, provider: string, model: string) {
+  const session = h.agents.get(id)!.session
+  session.append('request/header', { reason:session.requestHeader() ? 'change' : 'initial', header:{config:{provider,model}} })
+}
+function followFixture(h: Awaited<ReturnType<typeof host>>) {
+  const providers: Record<string, {api:string; baseURL:string; apiKeyEnv?:string}> = {
+    first:{api:'anthropic-messages',baseURL:'https://first.invalid/v1',apiKeyEnv:'FIRST_API'},
+    second:{api:'openai-responses',baseURL:'https://second.invalid/v1',apiKeyEnv:'SECOND_API'},
+    third:{api:'openai-completions',baseURL:'https://third.invalid/v1',apiKeyEnv:'THIRD_API'},
+  }
+  const adapters = new Map(Object.keys(providers).map(id => [id, {}]))
+  h.ctx.provide('settings', {get: (ns:string) => ns === 'llm-pi-ai' ? {providers} : undefined} as never)
+  h.ctx.provide('llm', {registration: (id:string) => ({adapter:adapters.get(id)})} as never)
+  h.changeSettings({version:2,defaultConnection:'builtin:session-model'})
+  const fetcher = vi.fn<typeof fetch>(async () => Response.json({
+    content:[{type:'web_search_tool_result',content:[{type:'web_search_result',url:'https://source.invalid'}]}],
+    output:[{type:'web_search_call',action:{sources:[{url:'https://source.invalid'}]}}],
+    choices:[{message:{content:'Evidence',annotations:[{type:'url_citation',url_citation:{url:'https://source.invalid'}}]}}],
+  }))
+  vi.stubGlobal('fetch',fetcher)
+  return {providers,adapters,fetcher}
+}
+describe('follow-session model through installed DSH tools and remotes', () => {
+  it.each(['native','ptc'] as const)('%s uses the committed model, session-specific endpoint and credential for every query',async mode=>{
+    const h=await host(undefined,mode), f=followFixture(h)
+    Object.assign(h.agents.get('one')!,{options:{provider:'third',model:'stale-model'}})
+    await Promise.all([h.capture('one'),h.capture('two')])
+    // Actual committed identities become available AFTER agent/request preparation.
+    header(h,'one','first','actual-one');header(h,'two','second','actual-two')
+    const view=await h.invoke('get',{sessionId:'one'})
+    expect(view.connections.find(c=>c.id==='builtin:session-model')).toMatchObject({configured:true,credentialRef:'FIRST_API'})
+    const results=await Promise.all(['one','two'].map(id=>h.execute(id,mode==='ptc'?'run_code':'web_search',mode==='ptc'?{code:'return await tools.web_search({queries:["q"]})',description:'fixture'}:{queries:['a','b']})))
+    expect(results.every(r=>!r.isError)).toBe(true)
+    expect(f.fetcher).toHaveBeenCalledTimes(4)
+    for(const [url,init] of f.fetcher.mock.calls){
+      const body=JSON.parse(String(init?.body)), reqHeaders=new Headers(init?.headers)
+      if(body.model==='actual-one'){expect(url).toBe('https://first.invalid/v1/messages');expect(reqHeaders.get('x-api-key')).toBe('fixture-secret-not-a-key')}
+      else {expect(body.model).toBe('actual-two');expect(url).toBe('https://second.invalid/v1/responses')}
+    }
+    expect(h.credentials.resolve.mock.calls.map(c=>String(c[0])).sort()).toEqual(['FIRST_API','FIRST_API','SECOND_API','SECOND_API'])
+    expect(JSON.stringify(results)).not.toContain('fixture-secret-not-a-key')
+  })
+  it('retains old settings across same-step retries, accepts later actual model changes, and samples the next step',async()=>{
+    const h=await host(), f=followFixture(h)
+    await h.capture(); header(h,'one','first','m1')
+    f.providers.first={api:'openai-responses',baseURL:'https://changed.invalid/v1',apiKeyEnv:'CHANGED_API'}
+    await h.capture() // same step cannot resample new settings
+    expect((await h.execute('one')).isError).toBe(false)
+    expect(f.fetcher.mock.calls[0]?.[0]).toBe('https://first.invalid/v1/messages')
+    header(h,'one','third','m3') // host routing change uses a different cached binding key
+    expect((await h.execute('one')).isError).toBe(false)
+    expect(f.fetcher.mock.calls[1]?.[0]).toBe('https://third.invalid/v1/chat/completions')
+    await h.capture('one',1); header(h,'one','first','m1')
+    expect((await h.execute('one')).isError).toBe(false)
+    expect(f.fetcher.mock.calls[2]?.[0]).toBe('https://changed.invalid/v1/responses')
+    expect(h.credentials.resolve.mock.calls.map(c=>String(c[0]))).toEqual(['FIRST_API','THIRD_API','CHANGED_API'])
+  })
+  it('refuses unknown routes and missing/revoked credentials without fallback or cross-route key use',async()=>{
+    const h=await host(), f=followFixture(h)
+    delete f.providers.first!.apiKeyEnv
+    header(h,'one','first','m1');await h.capture()
+    const missing=await h.execute('one')
+    expect(missing.isError).toBe(true);expect(f.fetcher).not.toHaveBeenCalled();expect(h.credentials.resolve).not.toHaveBeenCalled()
+    header(h,'one','second','m2')
+    h.credentials.resolve.mockResolvedValue(undefined)
+    const revoked=await h.execute('one');expect(revoked.isError).toBe(true);expect(f.fetcher).not.toHaveBeenCalled()
+    expect(h.credentials.resolve.mock.calls.map(c=>String(c[0]))).toEqual(['SECOND_API'])
+    header(h,'one','subscription-route','m')
+    expect((await h.execute('one')).isError).toBe(true);expect(f.fetcher).not.toHaveBeenCalled()
+  })
+  it('isolates per-protocol options and cancels unresolved follow credentials without sending HTTP',async()=>{
+    const h=await host(), f=followFixture(h)
+    h.changeSettings({version:2,defaultConnection:'builtin:session-model',connections:{'builtin:session-model':{optionsByProtocol:{'anthropic-messages':{toolIdentifier:'web_search_20990101'},'openai-responses':{toolIdentifier:'web_search'}}}}})
+    await h.capture();header(h,'one','first','m1')
+    expect((await h.execute('one')).isError).toBe(false)
+    expect(JSON.parse(String(f.fetcher.mock.calls[0]?.[1]?.body)).tools[0].type).toBe('web_search_20990101')
+    header(h,'one','second','m2')
+    expect((await h.execute('one')).isError).toBe(false)
+    expect(JSON.parse(String(f.fetcher.mock.calls[1]?.[1]?.body)).tools[0].type).toBe('web_search')
+    h.credentials.resolve.mockImplementation(()=>new Promise(()=>{}))
+    const abort=new AbortController()
+    const pending=h.execute('one','web_search',{queries:['q1','q2']},abort.signal)
+    await vi.waitFor(()=>expect(h.credentials.resolve).toHaveBeenCalledTimes(4))
+    abort.abort('sensitive-abort-reason')
+    const result=await pending
+    expect(result.isError).toBe(true);expect(f.fetcher).toHaveBeenCalledTimes(2)
+    expect(JSON.stringify(result)).not.toContain('sensitive-abort-reason')
+  })
+  it('fails closed after adapter replacement, recovers on next step, and preserves ordinary chat',async()=>{
+    const h=await host(), f=followFixture(h)
+    header(h,'one','first','m');await h.capture()
+    f.adapters.set('first',{})
+    expect((await h.execute('one')).isError).toBe(true);expect(f.fetcher).not.toHaveBeenCalled()
+    await h.capture('one',1)
     expect((await h.execute('one')).isError).toBe(false)
   })
 })

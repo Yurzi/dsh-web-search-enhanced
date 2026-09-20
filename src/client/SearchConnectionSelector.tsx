@@ -29,7 +29,7 @@ export function createResponseGuard() {
 }
 export function discoverableConnections(connections: SearchConnectionView[]): SearchConnectionView[] {
   const values = [...connections]
-  if (!values.some(c => c.id === SESSION_MODEL_ID)) values.push({ id: SESSION_MODEL_ID, label: SESSION_MODEL_LABEL, kind: 'model', configured: false, reason: '宿主有效模型绑定不可用；可显式选择，但当前无法执行搜索。' })
+  if (!values.some(c => c.id === SESSION_MODEL_ID)) values.push({ id: SESSION_MODEL_ID, label: SESSION_MODEL_LABEL, kind: 'model', configured: false, reason: '尚未取得当前会话的模型连接状态；请刷新后检查协议、endpoint 和凭据。' })
   return values.sort((a, b) => Number(b.configured) - Number(a.configured))
 }
 export const freshnessLabels: Record<Freshness, string> = { auto: '自动', fresh: '优先新鲜', realtime: '优先实时' }

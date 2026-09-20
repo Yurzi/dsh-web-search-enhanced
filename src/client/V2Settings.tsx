@@ -144,7 +144,7 @@ export function V2Settings({ scope, credentials }: V2SettingsProps) {
     </fieldset>
     <h4>内置结构化连接 · 只需 Key</h4>
     {Object.entries(CATALOG).map(([id, c]) => { const ref = refFor(id, c.credentialRef); return <p key={id}>{String(config.connections?.[id]?.label ?? c.label)} · {states[ref]?.configured ? '已配置' : '未配置'}{config.connections?.[id]?.disabled ? ' · 已禁用' : ''} <button type="button" disabled={busy} aria-expanded={editor?.type === 'key' && editor.ref === ref} onClick={() => openKey(ref)}>配置 / 管理 Key</button></p> })}
-    <h4>模型与自定义连接</h4><p>{SESSION_MODEL_LABEL}：无需重复填写 Key；当前宿主有效模型绑定不可用，仍可显式选择，但执行会明确报错。</p>
+    <h4>模型与自定义连接</h4><p>{SESSION_MODEL_LABEL}：使用当前 Session 的实际 provider/model，并从 DSH settings 读取协议、endpoint 和凭据引用，无需重复填写 Key。普通 API Key 路由可用；OAuth/订阅或特殊 headers 路由不自动转换。</p>
     {custom.map(([id, c]) => <p key={id}>{String(c.label ?? id)} · {id} <button type="button" disabled={disabled} onClick={() => openConnection(c.kind === 'model' ? 'model' : 'structured', id)}>编辑</button> <button type="button" disabled={busy || !refFor(id)} onClick={() => openKey(refFor(id))}>管理 Key</button> <button type="button" disabled={disabled} onClick={() => { void act(() => mutate(sparseSettingOperations(snapshot, ['connections', id], undefined)), '已移除用户覆盖；继承连接仍保留，凭据未删除。') }}>移除用户连接覆盖</button></p>)}
     <button type="button" disabled={disabled} onClick={() => openConnection('model')}>添加固定模型连接</button>{' '}
     <button type="button" disabled={disabled} onClick={() => openConnection('structured')}>添加自定义结构化连接</button>

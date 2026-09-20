@@ -96,7 +96,10 @@ describe('session response fencing', () => {
     const values = discoverableConnections([])
     expect(values).toHaveLength(1)
     expect(values[0]).toMatchObject({ id: SESSION_MODEL_ID, configured: false, kind: 'model' })
-    expect(values[0]?.reason).toContain('绑定不可用')
+    expect(values[0]?.reason).toContain('尚未取得')
+  })
+  it('retains usable follow-model state supplied by the current session Remote', () => {
+    expect(discoverableConnections([{id:SESSION_MODEL_ID,label:'跟随会话模型',kind:'model',configured:true,credentialRef:'SESSION_API'}])[0]).toMatchObject({configured:true,credentialRef:'SESSION_API'})
   })
   it('preserves server reasons and sorts configured entries without mutating input', () => {
     const connections = [{ id: SESSION_MODEL_ID, label: '跟随会话模型', kind: 'model' as const, configured: false, reason: 'host unavailable' }, { id: 'builtin:exa', label: 'Exa', kind: 'structured' as const, configured: true }]
