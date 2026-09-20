@@ -1,6 +1,7 @@
 import type { Freshness, StructuredAdapter } from './catalog.ts'
 import { CATALOG, SESSION_MODEL_ID, SESSION_MODEL_LABEL } from './catalog.ts'
 import type { SearchProtocol } from './protocols.ts'
+import { validateStructuredOptions } from './adapters/structured.ts'
 
 export interface FixedBinding { mode: 'fixed'; protocol: SearchProtocol; model: string; baseURL: string; credentialRef: string }
 export interface Connection {
@@ -99,7 +100,7 @@ export function resolveSettings(config: V2Config = {}): ResolvedSettings {
   }
   // Freshness-owned and secret fields must never enter a request snapshot.
   for (const c of Object.values(connections)) {
-    if (c.kind === 'structured' && Object.keys(c.options).some(k => /key|secret|token|maxAge|livecrawl|scrapeOptions|contents/i.test(k))) throw new Error('forbidden structured option')
+    if (c.kind === 'structured') c.options = validateStructuredOptions(c.adapter!, c.options)
   }
   return { freshness, ...(config.defaultConnection === undefined ? {} : { defaultConnection: text(config.defaultConnection, 'defaultConnection') }), connections }
 }

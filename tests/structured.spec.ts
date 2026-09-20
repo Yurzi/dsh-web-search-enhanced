@@ -1,0 +1,148 @@
+import { describe, expect, it, vi } from 'vitest'
+import { WebError } from '@deepseek-ai/dsh-web'
+import { searchStructured, validateStructuredOptions } from '../src/adapters/structured.ts'
+import type { StructuredAdapter } from '../src/adapters/structured.ts'
+
+const adapters: StructuredAdapter[] = ['firecrawl', 'exa', 'tavily', 'tinyfish']
+const config = { endpoint: 'https://search.example/search' }
+// Synthetic transport credential only, never an authenticated request.
+const context = { apiKey: 'test-only-credential', freshness: 'auto' as const }
+const row = { url: 'https://example.com/page', title: 'Page', description: 'SERP', markdown: 'Scraped text', text: 'Source text', highlights: ['Highlight'], content: 'Tavily text', snippet: 'Tinyfish text' }
+function envelope(adapter: StructuredAdapter, rows: unknown[] = [row]) {
+  return adapter === 'firecrawl' ? { success: true, data: { web: rows } } : { results: rows }
+}
+function mock(payload: unknown) { return vi.fn<typeof fetch>().mockImplementation(async () => Response.json(payload)) }
+function body(fetcher: ReturnType<typeof mock>) { return JSON.parse(fetcher.mock.calls[0]![1]!.body as string) as Record<string, any> }
+
+describe('structured search API contracts (official-doc-shaped synthetic fixtures)', () => {
+  it.each(adapters)('%s authenticates, refuses redirects, and returns sources without a summary', async adapter => {
+    const fetcher = mock(envelope(adapter))
+    const result = await searchStructured(adapter, { query: 'query', maxResults: 2 }, config, { ...context, fetcher })
+    expect(result.sources[0]?.url).toBe(row.url)
+    expect(result.content).toBeUndefined()
+    expect(result.truncated).toBe(false)
+    const init = fetcher.mock.calls[0]![1]!
+    expect(init.redirect).toBe('error')
+    expect(init.signal).toBeInstanceOf(AbortSignal)
+    expect(new Headers(init.headers).get(adapter === 'exa' || adapter === 'tinyfish' ? 'x-api-key' : 'authorization')).toBe(adapter === 'exa' || adapter === 'tinyfish' ? context.apiKey : 'Bearer ' + context.apiKey)
+    if (adapter === 'tinyfish') {
+      const url = new URL(String(fetcher.mock.calls[0]![0]))
+      expect(init.method).toBe('GET')
+      expect(init.body).toBeUndefined()
+      expect([...url.searchParams.keys()]).toEqual(['query', 'page'])
+      expect(url.searchParams.get('page')).toBe('0')
+    } else expect(init.method).toBe('POST')
+  })
+  it.each(adapters)('%s accepts empty results and locally enforces output caps', async adapter => {
+    expect(await searchStructured(adapter, { query: 'q' }, config, { ...context, fetcher: mock(envelope(adapter, [])) })).toEqual({ sources: [], truncated: false })
+    const fetcher = mock(envelope(adapter, [row, { ...row, url: 'https://example.com/two' }]))
+    const result = await searchStructured(adapter, { query: 'q', maxResults: 1 }, config, { ...context, fetcher })
+    expect(result.sources).toHaveLength(1)
+    expect(result.truncated).toBe(true)
+    const noCall = mock(null)
+    expect(await searchStructured(adapter, { query: 'q', maxResults: 0 }, config, { ...context, fetcher: noCall })).toEqual({ sources: [], truncated: false })
+    expect(noCall).not.toHaveBeenCalled()
+  })
+  it.each(['auto', 'fresh', 'realtime'] as const)('maps %s to actual Firecrawl and Exa content', async freshness => {
+    const fire = mock(envelope('firecrawl'))
+    const exa = mock(envelope('exa'))
+    const f = await searchStructured('firecrawl', { query: 'q', maxResults: 500 }, config, { ...context, freshness, fetcher: fire })
+    const e = await searchStructured('exa', { query: 'q', maxResults: 500 }, config, { ...context, freshness, fetcher: exa })
+    expect(body(fire).limit).toBe(100)
+    expect(body(exa).numResults).toBe(100)
+    expect(body(fire).sources).toEqual([{ type: 'web' }])
+    expect(body(fire).scrapeOptions).toEqual(freshness === 'auto' ? undefined : { formats: [{ type: 'markdown' }], maxAge: freshness === 'fresh' ? 86400000 : 0 })
+    expect(body(exa).contents).toEqual({ text: { maxCharacters: 4000 }, ...(freshness === 'auto' ? {} : { maxAgeHours: freshness === 'fresh' ? 24 : 0 }) })
+    expect(f.sources[0]?.snippet).toBe(freshness === 'auto' ? 'SERP' : 'Scraped text')
+    expect(e.sources[0]?.snippet).toBe('Source text')
+    expect(JSON.stringify(body(exa))).not.toContain('livecrawl')
+  })
+  it('does not substitute SERP text for missing scraped content', async () => {
+    const fetcher = mock(envelope('firecrawl', [{ url: row.url, description: 'Old SERP', markdown: null }]))
+    const result = await searchStructured('firecrawl', { query: 'q' }, config, { ...context, freshness: 'realtime', fetcher })
+    expect(result.sources[0]?.snippet).toBeUndefined()
+  })
+  it.each(['tavily', 'tinyfish'] as const)('%s ignores cache freshness rather than mapping date windows', async adapter => {
+    const fetcher = mock(envelope(adapter))
+    for (const freshness of ['auto', 'fresh', 'realtime'] as const) await searchStructured(adapter, { query: 'q', maxResults: 300 }, config, { ...context, freshness, fetcher })
+    expect(fetcher.mock.calls.map(call => [call[0], call[1]?.body])).toEqual(Array(3).fill([fetcher.mock.calls[0]![0], fetcher.mock.calls[0]![1]?.body]))
+    if (adapter === 'tavily') expect(body(fetcher)).toMatchObject({ max_results: 20, include_answer: false, include_raw_content: false })
+  })
+  it('bounds snippets separately from source truncation and handles dates conservatively', async () => {
+    const fetcher = mock({ results: [{ ...row, text: 'x'.repeat(5000), publishedDate: '2025-01-02' }] })
+    const result = await searchStructured('exa', { query: 'q' }, config, { ...context, fetcher })
+    expect(result.sources[0]?.snippet).toHaveLength(4000)
+    expect(result.sources[0]?.publishedAt).toBe('2025-01-02T00:00:00.000Z')
+    expect(result.truncated).toBe(false)
+    const tiny = await searchStructured('tinyfish', { query: 'q' }, config, { ...context, fetcher: mock({ results: [{ ...row, date: '2 hours ago' }] }) })
+    expect(tiny.sources[0]?.publishedAt).toBeUndefined()
+  })
+  it.each(adapters)('%s rejects malformed envelopes and rows, not disguising them as empty', async adapter => {
+    for (const payload of [{}, { error: 'private error' }, envelope(adapter, [null]), envelope(adapter, [{ url: 'javascript:alert(1)' }]), envelope(adapter, [{ ...row, title: 10 }]), envelope(adapter, [{ ...row, url: 'https://user:password@example.com' }])]) {
+      await expect(searchStructured(adapter, { query: 'q' }, config, { ...context, fetcher: mock(payload) })).rejects.toMatchObject({ code: 'WEB_PROVIDER_ERROR' })
+    }
+  })
+  it.each([401, 402, 403, 429, 500])('sanitizes HTTP %s failures without reading the error body', async status => {
+    const cancel = vi.fn()
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(new ReadableStream({ cancel }), { status }))
+    await expect(searchStructured('tinyfish', { query: 'private-query' }, config, { ...context, fetcher })).rejects.toThrow('HTTP ' + status)
+    expect(cancel).toHaveBeenCalled()
+  })
+  it('does not leak transport WebErrors, URLs, credentials, JSON, or abort reasons', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockRejectedValue(new WebError('private-query test-only-credential https://secret.example', 'SECRET'))
+    try { await searchStructured('tinyfish', { query: 'private-query' }, config, { ...context, fetcher }); expect.fail('must fail') } catch (error) {
+      expect(String(error)).not.toMatch(/private-query|test-only-credential|secret.example/)
+      expect((error as Error).cause).toBeUndefined()
+    }
+    await expect(searchStructured('exa', { query: 'q' }, config, { ...context, fetcher: vi.fn<typeof fetch>().mockResolvedValue(new Response('private-invalid-json')) })).rejects.toThrow('invalid structured JSON')
+  })
+  it('rejects oversized declared and streamed responses', async () => {
+    for (const response of [new Response('{}', { headers: { 'content-length': '9999999' } }), new Response('x'.repeat(2 * 1024 * 1024 + 1))]) {
+      await expect(searchStructured('exa', { query: 'q' }, config, { ...context, fetcher: vi.fn<typeof fetch>().mockResolvedValue(response) })).rejects.toThrow('size limit')
+    }
+  })
+  it('cancels before fetch and during a fetch that ignores its signal', async () => {
+    const controller = new AbortController()
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(() => new Promise(() => {}))
+    const pending = searchStructured('exa', { query: 'q' }, config, { ...context, signal: controller.signal, fetcher })
+    controller.abort('sensitive reason')
+    await expect(pending).rejects.toMatchObject({ code: 'WEB_ABORTED' })
+    await expect(pending).rejects.not.toHaveProperty('cause')
+    await expect(searchStructured('exa', { query: 'q' }, config, { ...context, signal: controller.signal, fetcher })).rejects.toMatchObject({ code: 'WEB_ABORTED' })
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+  it('cancels and releases a stalled response stream', async () => {
+    const controller = new AbortController()
+    const cancel = vi.fn()
+    let started!: () => void
+    const reading = new Promise<void>(resolve => { started = resolve })
+    const response = new Response(new ReadableStream({ pull() { started() }, cancel }))
+    const pending = searchStructured('exa', { query: 'q' }, config, { ...context, signal: controller.signal, fetcher: vi.fn<typeof fetch>().mockResolvedValue(response) })
+    await reading
+    controller.abort()
+    await expect(pending).rejects.toMatchObject({ code: 'WEB_ABORTED' })
+    expect(cancel).toHaveBeenCalled()
+  })
+  it('times out without depending on cooperative fetch', async () => {
+    vi.useFakeTimers()
+    try {
+      const pending = searchStructured('exa', { query: 'q' }, config, { ...context, fetcher: vi.fn<typeof fetch>().mockImplementation(() => new Promise(() => {})) })
+      const assertion = expect(pending).rejects.toMatchObject({ code: 'WEB_PROVIDER_TIMEOUT' })
+      await vi.advanceTimersByTimeAsync(90_000)
+      await assertion
+    } finally { vi.useRealTimers() }
+  })
+  it('validates options without arbitrary passthrough or freshness overrides', () => {
+    expect(validateStructuredOptions('tinyfish', { purpose: 'Explicit purpose', location: 'US' })).toEqual({ purpose: 'Explicit purpose', location: 'US' })
+    for (const adapter of adapters) for (const options of [{ apiKey: 'hidden' }, { maxAgeHours: 0 }, { limit: 3 }, { query: 'override' }, { headers: {} }, [], null]) expect(() => validateStructuredOptions(adapter, options)).toThrow()
+    expect(() => validateStructuredOptions('exa', { type: 'neural' })).toThrow()
+    expect(() => validateStructuredOptions('tavily', { search_depth: 'invalid' })).toThrow()
+    expect(() => validateStructuredOptions('firecrawl', { safe: 'yes' })).toThrow()
+  })
+  it('rejects unsafe endpoints and invalid limits before sending credentials', async () => {
+    const fetcher = mock({ results: [] })
+    for (const endpoint of ['not-url', 'ftp://example.com', 'https://user:pass@example.com', 'https://example.com?key=secret', 'https://example.com#fragment']) await expect(searchStructured('exa', { query: 'q' }, { endpoint }, { ...context, fetcher })).rejects.toThrow('endpoint')
+    for (const maxResults of [-1, 1.5, NaN, Infinity]) await expect(searchStructured('exa', { query: 'q', maxResults }, config, { ...context, fetcher })).rejects.toThrow('limit')
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+})
