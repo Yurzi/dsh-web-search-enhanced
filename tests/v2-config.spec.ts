@@ -25,6 +25,11 @@ describe('V2 sparse catalog and request snapshots', () => {
     expect(JSON.stringify(importLegacy({ model: 'fixed', fallbackModel: 'unsafe' }))).not.toContain('unsafe')
     expect(() => importLegacy({ apiKey: 'not-a-key' })).toThrow('DSH Credentials')
   })
+  it('never overwrites pre-existing custom connections during import', () => {
+    const connections = { 'custom:work': { label: 'Existing' } }
+    expect(importLegacy({ connections }).connections?.['custom:work']).toEqual(connections['custom:work'])
+    expect(() => importLegacy({ connections: { 'custom:legacy': {} } })).toThrow('already exists')
+  })
   it('freezes retries and samples the next step, independently per session', async () => {
     const contexts = new ExecutionContexts(), a = {}, b = {}
     const old = contexts.capture(a, 'a', 1, 1, { connectionId: 'builtin:exa', revision: 1 }, resolveSettings({ freshness: 'realtime' }))

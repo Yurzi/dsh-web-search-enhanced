@@ -42,38 +42,19 @@ describe('settings card helpers', () => {
     expect(Object.keys(zh).sort()).toEqual(Object.keys(en).sort())
   })
 
-  it('registers /search-config action command when commandUi service is available', () => {
-    const registered: any[] = []
-    const commandUi = {
-      register: vi.fn((cmd: any) => {
-        registered.push(cmd)
-        return () => {}
-      }),
-    }
-    const injectedScopes: Record<string, any> = {
-      commandUi: { commandUi, effect: (fn: () => void) => fn() },
-    }
-    const mockCtx = {
-      locale: {
-        bind: () => (k: string) => k,
-        register: vi.fn(),
-      },
-      effect: (fn: () => void) => fn(),
+  it('mounts plugin remotes and an additive selector without replacing composer/model slots', async () => {
+    const register = vi.fn()
+    const mount = vi.fn(async () => async () => {})
+    const ctx = {
+      locale: { register: vi.fn() }, effect: (fn: () => unknown) => fn(),
       settingsScope: { bind: () => ({}) },
-      slots: { inject: vi.fn(), register: vi.fn() },
-      remote: { credentials: {} },
-      inject: (deps: string[], cb: (scope: any) => void) => {
-        if (deps.includes('commandUi')) cb(injectedScopes.commandUi)
-      },
+      slots: { inject: (_name: string, fn: () => unknown) => fn(), register },
+      remote: { credentials: {}, $mount: mount },
     }
-
-    apply(mockCtx as any)
-
-    expect(commandUi.register).toHaveBeenCalledTimes(1)
-    expect(registered[0]?.name).toBe('search-config')
-    expect(registered[0]?.ui?.kind).toBe('action')
-    expect(typeof registered[0]?.ui?.run).toBe('function')
-    expect(registered[0]?.available()).toBe(true)
+    await apply(ctx as any)
+    expect(mount).toHaveBeenCalledTimes(1)
+    expect(register.mock.calls.map(c => c[0].name)).toEqual(['settings.plugin.item','conversation.input.right'])
+    expect(register.mock.calls[1]?.[0].inject('a').sessionId).toBe('a')
   })
 
   describe('sparse configuration mutations (preventing settings.yaml bloat)', () => {

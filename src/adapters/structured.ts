@@ -1,4 +1,5 @@
 import { WebError } from '@deepseek-ai/dsh-web'
+import { freshnessDiagnostic, type FreshnessDiagnostic } from '../search/diagnostics.ts'
 import type { WebSearchRequest, WebSearchResult, WebSearchSource } from '@deepseek-ai/dsh-web'
 
 export type StructuredAdapter = 'firecrawl' | 'exa' | 'tavily' | 'tinyfish'
@@ -45,7 +46,7 @@ export async function searchStructured(
   adapter: StructuredAdapter,
   request: WebSearchRequest,
   config: { endpoint: string; options?: Record<string, unknown> },
-  context: { freshness: Freshness; apiKey: string; signal?: AbortSignal; fetcher?: typeof fetch },
+  context: { freshness: Freshness; apiKey: string; signal?: AbortSignal; fetcher?: typeof fetch; diagnose?: (facts: FreshnessDiagnostic) => void },
 ): Promise<WebSearchResult> {
   if (context.signal?.aborted) throw failure('search aborted', 'WEB_ABORTED')
   const options = validateStructuredOptions(adapter, config.options)
@@ -82,7 +83,9 @@ export async function searchStructured(
   const init: RequestInit = { method: adapter === 'tinyfish' ? 'GET' : 'POST', headers }
   if (adapter !== 'tinyfish') { headers['content-type'] = 'application/json'; init.body = JSON.stringify(body) }
   const payload = await fetchJson(endpoint.toString(), init, context.signal, context.fetcher)
-  return normalize(adapter, payload, request.maxResults, context.freshness)
+  const result = normalize(adapter, payload, request.maxResults, context.freshness)
+  context.diagnose?.(freshnessDiagnostic(context.freshness, adapter === 'firecrawl' || adapter === 'exa', result.sources.map(s => s.snippet)))
+  return result
 }
 
 /** Shared bounded JSON transport. The caller owns trusted endpoint/credential binding. */

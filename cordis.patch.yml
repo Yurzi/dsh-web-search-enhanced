@@ -12,9 +12,4 @@
 - insert:
     - id: web-search-enhanced
       name: dsh-web-search-enhanced
-      config:
-        modelMode: configured
-        protocol: anthropic-messages
-        apiKeyEnv: WEB_SEARCH_ENHANCED_API
-        fallbackModel: deepseek-flash
-        maxTokens: 4096
+      config: {} # Catalog defaults stay in code; credentials do not auto-select a service.

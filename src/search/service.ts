@@ -4,6 +4,7 @@ import { buildWireRequest, defaultToolIdentifier, parseSearchResponse, type Reso
 import type { FixedBinding } from '../config.ts'
 import type { SearchSnapshot } from '../dsh/execution-context.ts'
 import { fetchJson, searchStructured } from '../adapters/structured.ts'
+import { freshnessDiagnostic, type FreshnessDiagnostic } from './diagnostics.ts'
 
 export const FOLLOW_UNAVAILABLE = '当前宿主未公开实际请求的安全搜索绑定；跟随会话模型暂不可用。请选择固定模型或结构化连接。'
 export function searchError(message: string, code = 'WEB_PROVIDER_ERROR'): WebError { return new WebError('dsh-web-search-enhanced: ' + message, code) }
@@ -20,7 +21,7 @@ export async function abortable<T>(pending: Promise<T>, signal?: AbortSignal): P
 export async function executeSearch(
   snapshot: SearchSnapshot, request: WebSearchRequest,
   resolveCredential: (ref: string) => Promise<string | undefined>,
-  signal?: AbortSignal, binding?: FixedBinding, fetcher: typeof fetch = globalThis.fetch,
+  signal?: AbortSignal, binding?: FixedBinding, fetcher: typeof fetch = globalThis.fetch, diagnose?: (facts: FreshnessDiagnostic) => void,
 ): Promise<WebSearchResult> {
   if (signal?.aborted) throw searchError('search aborted', 'WEB_ABORTED')
   if (snapshot.error) throw searchError(snapshot.error, 'WEB_SEARCH_CONTEXT_UNAVAILABLE')
@@ -36,7 +37,7 @@ export async function executeSearch(
     throw searchError('DSH Credentials 无法解析所选连接的凭据', 'WEB_PROVIDER_CREDENTIAL_MISSING')
   }
   if (!key?.trim() || /[\r\n]/u.test(key)) throw searchError('所选连接缺少有效的 DSH Credential: ' + ref, 'WEB_PROVIDER_CREDENTIAL_MISSING')
-  if (c.kind === 'structured') return searchStructured(c.adapter!, request, { endpoint: c.endpoint!, options: c.options }, { freshness: snapshot.freshness, apiKey: key, ...(signal ? { signal } : {}), fetcher })
+  if (c.kind === 'structured') return searchStructured(c.adapter!, request, { endpoint: c.endpoint!, options: c.options }, { freshness: snapshot.freshness, apiKey: key, ...(signal ? { signal } : {}), fetcher, ...(diagnose ? { diagnose } : {}) })
   if (!Number.isSafeInteger(request.maxResults ?? 1) || (request.maxResults ?? 1) < 0 || !request.query.trim()) throw searchError('invalid search request')
   if (request.maxResults === 0) return { sources: [], truncated: false }
   const options = c.binding?.mode === 'session' ? c.optionsByProtocol?.[route!.protocol] ?? {} : c.options
@@ -50,6 +51,7 @@ export async function executeSearch(
   const payload = await fetchJson(wire.endpoint, { method: 'POST', headers: wire.headers, body: JSON.stringify(wire.body) }, signal, fetcher)
   let result: WebSearchResult
   try { result = parseSearchResponse(route!.protocol, payload) } catch { throw searchError('所选模型返回非法搜索响应（请确认模型支持服务端搜索）', 'WEB_PROVIDER_RESPONSE_INVALID') }
+  diagnose?.(freshnessDiagnostic(snapshot.freshness, false, result.sources.map(s => s.snippet)))
   const limit = request.maxResults ?? result.sources.length
   return { ...result, sources: result.sources.slice(0, limit), truncated: result.truncated || result.sources.length > limit }
 }

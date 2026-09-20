@@ -1,158 +1,64 @@
-import { Context } from '@deepseek-ai/cordis'
-import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { describe, expect, it, vi } from 'vitest'
-import { apply, Config, DEFAULT_API_KEY_ENV, DEFAULT_PROVIDER_ID, inject, name, resolveConfig, resolveRuntimeConfig } from '../src/index.ts'
-
-describe('host plugin contract', () => {
-  it('exports the Cordis provider shape', () => {
-    expect(name).toBe('web-search-enhanced')
-    expect(inject).toEqual(['web'])
-    expect(Config).toBeDefined()
-  })
-
-  it('uses the plugin-owned credential reference and fallback model', () => {
-    expect(resolveConfig({}).apiKeyEnv).toBe(DEFAULT_API_KEY_ENV)
-    expect(resolveConfig({}).model).toBe('deepseek-flash')
-    expect(resolveConfig({ model: 'primary', fallbackModel: 'fallback' })).toMatchObject({
-      modelMode: 'configured', model: 'primary', fallbackModel: 'fallback',
-    })
-  })
-
-  it('resolves protocol-specific internal identifiers', () => {
-    expect(resolveConfig({}).providerId).toBe(DEFAULT_PROVIDER_ID)
-    expect(resolveConfig({ protocol: 'anthropic-messages' }).toolIdentifier).toBe('web_search_20260209')
-    expect(resolveConfig({ protocol: 'openai-responses' }).toolIdentifier).toBe('web_search')
-    expect(resolveConfig({ protocol: 'openai-chat-completions' }).toolIdentifier).toBe('web_search_options')
-    expect(resolveConfig({ protocol: 'openai-responses', toolIdentifier: 'web_search_preview', maxTokens: 9000 }))
-      .toMatchObject({ toolIdentifier: 'web_search_preview', maxTokens: 9000 })
-  })
-
-  it('follows the active route protocol and model', async () => {
-    const services = {
-      agents: { currentInitiator: () => ({ options: { provider: 'route', model: 'session-model' } }) },
-      settings: { get: vi.fn(() => ({ providers: { route: { api: 'openai-completions', baseURL: 'https://route.example/v1', apiKeyEnv: 'ROUTE_API' } } })) },
-      llm: { resolveModelInfo: vi.fn(async () => ({ api: 'openai-completions' })) },
-    }
-    const ctx = { get: (key: string) => services[key as keyof typeof services] } as unknown as Context
-    await expect(resolveRuntimeConfig(ctx, { modelMode: 'current-session', protocol: 'anthropic-messages', model: 'fallback-primary', fallbackModel: 'fallback-search' }))
-      .resolves.toMatchObject({ model: 'session-model', protocol: 'openai-chat-completions', baseURL: 'https://route.example/v1', apiKeyEnv: 'ROUTE_API', maxTokens: 4096 })
-  })
-
-  it('follows the model recorded for the current Session request', async () => {
-    const services = {
-      agents: { currentInitiator: () => ({
-        options: { provider: 'stale', model: 'initial-model' },
-        session: { requestHeader: () => ({ config: { provider: 'live', model: 'selected-model' } }) },
-      }) },
-      settings: { get: () => ({ providers: { live: { api: 'anthropic-messages', baseURL: 'https://live.example/v1', apiKeyEnv: 'LIVE_API' } } }) },
-      llm: { resolveModelInfo: async () => ({}) },
-    }
-    const ctx = { get: (key: string) => services[key as keyof typeof services] } as unknown as Context
-    await expect(resolveRuntimeConfig(ctx, { modelMode: 'current-session' }))
-      .resolves.toMatchObject({ model: 'selected-model', protocol: 'anthropic-messages', baseURL: 'https://live.example/v1', apiKeyEnv: 'LIVE_API' })
-  })
-
-  it('uses fallback model when the active route protocol is unavailable', async () => {
-    const services = {
-      agents: { currentInitiator: () => ({ options: { provider: 'route', model: 'session-model' } }) },
-      settings: { get: () => ({ providers: { route: { api: 'unknown-api', baseURL: 'https://route.example/v1' } } }) },
-      llm: { resolveModelInfo: async () => ({ api: 'unknown-api' }) },
-    }
-    const ctx = { get: (key: string) => services[key as keyof typeof services] } as unknown as Context
-    await expect(resolveRuntimeConfig(ctx, { modelMode: 'current-session', model: 'primary', fallbackModel: 'fallback' }))
-      .resolves.toMatchObject({ model: 'fallback', protocol: 'anthropic-messages' })
-  })
-
-  it('uses fallback model when no active session route exists', async () => {
-    const ctx = { get: () => undefined } as unknown as Context
-    await expect(resolveRuntimeConfig(ctx, { modelMode: 'current-session', model: 'primary', fallbackModel: 'fallback' }))
-      .resolves.toMatchObject({ model: 'fallback', protocol: 'anthropic-messages' })
-  })
-
-  it('rejects invalid live-request settings before registration', () => {
-    expect(() => resolveConfig({ baseURL: 'not-a-url' })).toThrow('baseURL')
-    expect(() => resolveConfig({ maxTokens: 0 })).toThrow('maxTokens')
-    expect(() => resolveConfig({ toolIdentifier: '__proto__' })).toThrow('toolIdentifier')
-  })
-
-  it('falls back to DEEPSEEK_API_KEY when WEB_SEARCH_ENHANCED_API is unset and endpoint is DeepSeek', async () => {
-    let capturedProvider: any
-    const services = {
-      web: { registerSearchProvider: (p: any) => { capturedProvider = p } },
-      settings: { installSection: () => {} },
-      credentials: {
-        resolve: vi.fn(async (ref: any) => {
-          if (ref === credentialRef('DEEPSEEK_API_KEY')) return { value: 'ds-secret-key' }
-          return undefined
-        }),
-      },
-    }
-    const ctx = {
-      web: services.web,
-      get: (key: string) => services[key as keyof typeof services],
-      inject: (_deps: string[], cb: (c: any) => void) => cb({ settings: services.settings }),
-    } as unknown as Context
-
-    apply(ctx, { protocol: 'anthropic-messages', baseURL: 'https://api.deepseek.com/anthropic/v1' })
-    expect(capturedProvider).toBeDefined()
-    expect(capturedProvider.id).toBe('enhanced-search')
-
-    const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ content: [
-      { type: 'web_search_tool_result', content: [{ type: 'web_search_result', url: 'https://deepseek.com' }] },
-    ] }), { status: 200, headers: { 'content-type': 'application/json' } }))
-    const origFetch = globalThis.fetch
-    globalThis.fetch = fetchSpy as any
-    try {
-      const res = await capturedProvider.search({ query: 'test' })
-      expect(res.sources).toEqual([{ url: 'https://deepseek.com' }])
-      expect(fetchSpy).toHaveBeenCalledWith(
-        'https://api.deepseek.com/anthropic/v1/messages',
-        expect.objectContaining({
-          headers: expect.objectContaining({ 'x-api-key': 'ds-secret-key' }),
-        }),
-      )
-    } finally {
-      globalThis.fetch = origFetch
-    }
-  })
-
-  it('records outbound search request into session when agent session is active', async () => {
-    let capturedProvider: any
-    const appendedEvents: Array<{ type: string; data: any }> = []
-    const sessionMock = {
-      append: vi.fn((type: string, data: any) => {
-        appendedEvents.push({ type, data })
-      }),
-    }
-    const services = {
-      web: { registerSearchProvider: (p: any) => { capturedProvider = p } },
-      settings: { installSection: () => {} },
-      agents: { currentInitiator: () => ({ session: sessionMock }) },
-      credentials: {
-        resolve: vi.fn(async () => ({ value: 'ds-secret-key' })),
-      },
-    }
-    const ctx = {
-      web: services.web,
-      get: (key: string) => services[key as keyof typeof services],
-      inject: (_deps: string[], cb: (c: any) => void) => cb({ settings: services.settings }),
-    } as unknown as Context
-
-    apply(ctx, { protocol: 'anthropic-messages', baseURL: 'https://api.deepseek.com/anthropic/v1' })
-
-    const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ content: [
-      { type: 'web_search_tool_result', content: [{ type: 'web_search_result', url: 'https://deepseek.com' }] },
-    ] }), { status: 200, headers: { 'content-type': 'application/json' } }))
-    const origFetch = globalThis.fetch
-    globalThis.fetch = fetchSpy as any
-    try {
-      await capturedProvider.search({ query: 'tracked query' })
-      expect(sessionMock.append).toHaveBeenCalledTimes(1)
-      expect(appendedEvents[0]?.type).toBe('web/deepseek-search-llm-request')
-      expect(appendedEvents[0]?.data.endpoint).toBe('https://api.deepseek.com/anthropic/v1/messages')
-      expect(JSON.stringify(appendedEvents[0]?.data)).not.toContain('ds-secret-key')
-    } finally {
-      globalThis.fetch = origFetch
-    }
-  })
+import { Config, DEFAULT_API_KEY_ENV, DEFAULT_PROVIDER_ID, inject, name, resolveConfig, resolveSettings } from '../src/index.ts'
+import { ExecutionContexts } from '../src/dsh/execution-context.ts'
+import { executeSearch } from '../src/search/service.ts'
+import type { FixedBinding } from '../src/config.ts'
+const fixed: FixedBinding = { mode: 'fixed', model: 'fixed-search', protocol: 'openai-responses', baseURL: 'https://model.example/v1', credentialRef: 'MODEL_API' }
+function snapshot(id: string, freshness: 'auto'|'fresh'|'realtime' = 'auto') {
+  return new ExecutionContexts().capture({}, 'session', 1, 1, {connectionId:id,revision:0}, resolveSettings({freshness, connections:{'custom:model':{kind:'model',label:'Fixed',binding:fixed,trustedEndpoint:true}}}))
+}
+const modelResponse = () => new Response(JSON.stringify({output:[{type:'web_search_call',status:'completed',action:{sources:[{url:'https://source.test'}]}}]}))
+describe('V2 host and model contracts', () => {
+ it('exports one stable provider and an unmaterialized schema', () => {
+  expect(name).toBe('web-search-enhanced');expect(inject).toEqual(['web']);expect(DEFAULT_PROVIDER_ID).toBe('enhanced-search')
+  expect(Config({})).toEqual({connections:{}});expect(resolveConfig({}).apiKeyEnv).toBe(DEFAULT_API_KEY_ENV)
+ })
+ it('preserves checked-in protocol-specific identifiers', () => {
+  expect(resolveConfig({}).toolIdentifier).toBe('web_search_20260209')
+  expect(resolveConfig({protocol:'openai-responses'}).toolIdentifier).toBe('web_search')
+  expect(resolveConfig({protocol:'openai-chat-completions'}).toolIdentifier).toBe('web_search_options')
+ })
+ it('fixed model ignores a different actual conversation binding', async () => {
+  const fetcher = vi.fn<typeof fetch>(async () => modelResponse()); const resolve = vi.fn(async ()=>'fixture-key')
+  await executeSearch(snapshot('custom:model'),{query:'q'},resolve,undefined,{...fixed,model:'chat',credentialRef:'CHAT_API'},fetcher)
+  expect(resolve).toHaveBeenCalledWith('MODEL_API')
+  expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body)).model).toBe('fixed-search')
+ })
+ it('follows a complete explicit nonsecret binding using the SAME adapter', async () => {
+  const fetcher = vi.fn<typeof fetch>(async ()=>modelResponse()), resolve = vi.fn(async ()=>'fixture-key')
+  await executeSearch(snapshot('builtin:session-model'),{query:'q'},resolve,undefined,fixed,fetcher)
+  expect(resolve).toHaveBeenCalledWith('MODEL_API');expect(fetcher.mock.calls[0]?.[0]).toBe('https://model.example/v1/responses')
+ })
+ it('rejects unprovable follow binding instead of falling back to live settings/defaults', async () => {
+  const fetcher = vi.fn<typeof fetch>(), resolve = vi.fn(async ()=>'fixture-key')
+  await expect(executeSearch(snapshot('builtin:session-model'),{query:'q'},resolve,undefined,undefined,fetcher)).rejects.toMatchObject({code:'WEB_SEARCH_FOLLOW_UNSUPPORTED'})
+  expect(fetcher).not.toHaveBeenCalled(); expect(resolve).not.toHaveBeenCalled()
+ })
+ it('resolves credentials per operation; revocation never selects another key', async () => {
+  const resolve = vi.fn().mockResolvedValueOnce('fixture-key').mockResolvedValueOnce(undefined)
+  const fetcher = vi.fn<typeof fetch>(async()=>modelResponse())
+  await executeSearch(snapshot('custom:model'),{query:'a'},resolve,undefined,undefined,fetcher)
+  await expect(executeSearch(snapshot('custom:model'),{query:'b'},resolve,undefined,undefined,fetcher)).rejects.toMatchObject({code:'WEB_PROVIDER_CREDENTIAL_MISSING'})
+  expect(resolve.mock.calls).toEqual([['MODEL_API'],['MODEL_API']]); expect(fetcher).toHaveBeenCalledTimes(1)
+ })
+ it('cancels while credentials are unresolved without retaining secret causes', async () => {
+  const controller = new AbortController()
+  const pending = executeSearch(snapshot('custom:model'),{query:'q'},()=>new Promise(()=>{}),controller.signal)
+  controller.abort('sensitive reason')
+  const error = await pending.catch(error => error)
+  expect(error.code).toBe('WEB_ABORTED'); expect(error.cause).toBeUndefined(); expect(error.message).not.toContain('sensitive reason')
+ })
+ it('fails deleted selections explicitly and never guesses another connection', async () => {
+  await expect(executeSearch(snapshot('custom:deleted'),{query:'q'},async()=>undefined)).rejects.toMatchObject({code:'WEB_SEARCH_CONNECTION_INVALID'})
+ })
+ it('ignores unsupported freshness without changing the preference', async () => {
+  const s = snapshot('custom:model','realtime');const fetcher = vi.fn<typeof fetch>(async()=>modelResponse())
+  await executeSearch(s,{query:'q'},async ()=>'fixture-key',undefined,undefined,fetcher)
+  expect(s.freshness).toBe('realtime');expect(JSON.stringify(fetcher.mock.calls)).not.toContain('maxAge')
+ })
+ it('caps model sources and sanitizes hostile upstream errors', async () => {
+  const result = await executeSearch(snapshot('custom:model'),{query:'q',maxResults:0},async ()=>'fixture-key',undefined,undefined,vi.fn())
+  expect(result.sources).toEqual([])
+  await expect(executeSearch(snapshot('custom:model'),{query:'q'},async ()=>'fixture-key',undefined,undefined,async()=>{throw new Error('fixture-key private query')})).rejects.not.toThrow('fixture-key')
+ })
 })

@@ -2,54 +2,32 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
+import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
-import type { CredentialRemote } from './SearchSettingsCard.tsx'
 import type { Context } from '@deepseek-ai/cordis'
-import { SearchSettingsCard, type SearchSettings } from './SearchSettingsCard.tsx'
+import type { CredentialRemote } from './SearchSettingsCard.tsx'
+import type { V2Config } from '../config.ts'
+import { V2Settings } from './V2Settings.tsx'
+import { SearchConnectionSelector, type SearchConnectionRemote } from './SearchConnectionSelector.tsx'
+import { searchContribution } from '../remote-contract.ts'
 import { en, zh, type LocaleKey } from './locales.ts'
-
-const SETTINGS_NAMESPACE = 'web-search-enhanced'
-const LOCALE_NAMESPACE = 'settings.webSearchEnhanced'
-
+const NS = 'web-search-enhanced'
+const LOCALE = 'settings.webSearchEnhanced'
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap { 'settings.webSearchEnhanced': LocaleKey }
 }
-
-/** Browser plugin dependencies. */
 export const inject = ['slots', 'locale', 'settingsScope', 'remote', 'remote.credentials']
-
-/** Register the localized card under Settings -> Plugins -> Plugin configuration. */
-export function apply(ctx: Context): void {
-  const t = ctx.locale.bind(LOCALE_NAMESPACE)
-  ctx.effect(() => ctx.locale.register(LOCALE_NAMESPACE, { en, zh }), 'web-search-enhanced: settings dictionaries')
-  const scope = ctx.settingsScope.bind<SearchSettings>({ namespace: SETTINGS_NAMESPACE })
+export async function apply(ctx: Context): Promise<void> {
+  ctx.effect(() => ctx.locale.register(LOCALE, { en, zh }), 'search dictionaries')
+  const scope = ctx.settingsScope.bind<V2Config>({ namespace: NS })
   ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
-    name: 'settings.plugin.item',
-    key: SETTINGS_NAMESPACE,
-    locale: LOCALE_NAMESPACE,
-    inject: () => ({ scope, credentials: (ctx.remote as unknown as { credentials: CredentialRemote }).credentials, t }),
-  }, SearchSettingsCard))
-
-  ctx.inject(['commandUi'], (scope: Context) => {
-    const commandUi = (scope as unknown as { commandUi?: { register?: (c: unknown) => () => void } }).commandUi
-    if (typeof commandUi?.register === 'function') {
-      scope.effect(() => commandUi.register!({
-        name: 'search-config',
-        label: () => t('commandLabel'),
-        description: () => t('commandDescription'),
-        available: () => true,
-        ui: {
-          kind: 'action',
-          run: () => {
-            const trigger = document.querySelector('[data-slot="sidebar.settings"] button') as HTMLButtonElement | null
-            trigger?.click()
-            setTimeout(() => {
-              const card = document.querySelector('[data-wse-card="true"]')
-              card?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-            }, 200)
-          },
-        },
-      }), 'web-search-enhanced: /search-config action command')
-    }
-  })
+    name: 'settings.plugin.item', key: NS, locale: LOCALE,
+    inject: () => ({ scope, credentials: (ctx.remote as unknown as { credentials: CredentialRemote }).credentials }),
+  }, V2Settings))
+  const dispose = await ctx.remote.$mount(searchContribution)
+  ctx.effect(() => dispose, 'search selection remote')
+  ctx.slots.inject('conversation.input.right', () => ctx.slots.register({
+    name: 'conversation.input.right', id: 'search-connection', order: 20,
+    inject: sessionId => ({ sessionId, remote: (ctx.remote as unknown as { searchConnections: SearchConnectionRemote }).searchConnections }),
+  }, SearchConnectionSelector))
 }

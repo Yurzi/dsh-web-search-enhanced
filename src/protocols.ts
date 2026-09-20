@@ -133,7 +133,8 @@ export function parseAnthropicResponse(payload: unknown): WebSearchResult {
     const block = asRecord(blockValue)
     if (block?.type !== 'web_search_tool_result') continue
     sawResultBlock = true
-    for (const itemValue of asArray(block.content)) {
+    if (!Array.isArray(block.content)) throw providerError('Anthropic search tool returned an error or invalid result')
+    for (const itemValue of block.content) {
       const item = asRecord(itemValue)
       if (item?.type !== 'web_search_result') continue
       addSource(sources, item, snippets.get(nonEmptyString(item.url) ?? ''))

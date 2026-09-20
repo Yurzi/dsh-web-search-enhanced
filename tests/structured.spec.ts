@@ -15,6 +15,14 @@ function mock(payload: unknown) { return vi.fn<typeof fetch>().mockImplementatio
 function body(fetcher: ReturnType<typeof mock>) { return JSON.parse(fetcher.mock.calls[0]![1]!.body as string) as Record<string, any> }
 
 describe('structured search API contracts (official-doc-shaped synthetic fixtures)', () => {
+  it('records partial/ignored privately without asserting verified freshness or leaking queries', async () => {
+    const diagnose = vi.fn()
+    const result = await searchStructured('firecrawl', {query:'private query'}, config, { ...context, freshness:'realtime', fetcher:mock(envelope('firecrawl',[row,{url:'https://example.com/missing',description:'old SERP'}])), diagnose })
+    expect(diagnose).toHaveBeenLastCalledWith({requested:'realtime',outcome:'partial',sources:2,contentSources:1,freshnessVerified:false})
+    expect(result).not.toHaveProperty('freshness');expect(JSON.stringify(diagnose.mock.calls)).not.toContain('private query')
+    await searchStructured('tavily', {query:'private query'}, config, { ...context, freshness:'realtime', fetcher:mock(envelope('tavily')), diagnose })
+    expect(diagnose.mock.calls[1]?.[0].outcome).toBe('ignored')
+  })
   it.each(adapters)('%s authenticates, refuses redirects, and returns sources without a summary', async adapter => {
     const fetcher = mock(envelope(adapter))
     const result = await searchStructured(adapter, { query: 'query', maxResults: 2 }, config, { ...context, fetcher })

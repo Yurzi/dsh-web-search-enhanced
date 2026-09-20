@@ -105,13 +105,4 @@ export function resolveSettings(config: V2Config = {}): ResolvedSettings {
   return { freshness, ...(config.defaultConnection === undefined ? {} : { defaultConnection: text(config.defaultConnection, 'defaultConnection') }), connections }
 }
 
-/** Explicit, secret-free legacy import; never writes settings or enables fallback. */
-export function importLegacy(raw: Record<string, unknown>): V2Config {
-  if (raw.apiKey) throw new Error('Move legacy apiKey to DSH Credentials before importing V2')
-  if (raw.modelMode === 'current-session') return { version: 2, defaultConnection: SESSION_MODEL_ID }
-  const options = Object.fromEntries(['apiVersion', 'toolIdentifier', 'maxTokens', 'maxUses', 'chatSearchMode', 'searchContextSize'].filter(k => raw[k] !== undefined).map(k => [k, raw[k]]))
-  return { version: 2, defaultConnection: 'custom:legacy', connections: { 'custom:legacy': {
-    kind: 'model', label: 'Imported search model', trustedEndpoint: true,
-    binding: { mode: 'fixed', protocol: raw.protocol ?? 'anthropic-messages', model: raw.model ?? 'deepseek-flash', baseURL: raw.baseURL ?? 'https://api.deepseek.com/anthropic/v1', credentialRef: raw.apiKeyEnv ?? 'WEB_SEARCH_ENHANCED_API' }, options,
-  } } }
-}
+export { importLegacy } from './migration.ts'

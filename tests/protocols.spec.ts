@@ -71,3 +71,9 @@ describe('protocol response adapters', () => {
     expect(() => parseResponsesResponse({ output: [] })).toThrow('web_search_call')
   })
 })
+
+describe('model search error envelopes', () => {
+  it('does not report an Anthropic server tool error as a successful empty search', () => {
+    expect(() => parseAnthropicResponse({ content: [{type:'web_search_tool_result',content:{type:'web_search_tool_result_error',error_code:'rate_limit_exceeded'}}] })).toThrow('error or invalid result')
+  })
+})
