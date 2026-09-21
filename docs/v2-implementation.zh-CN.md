@@ -3,10 +3,12 @@
 ## 当前验证
 
 - TypeScript 全项目检查通过。
-- Vitest：16 个文件、212 项测试通过。
+- Vitest：18 个文件、226 项测试通过。
 - 工作区开发依赖已对齐 DSH 0.1.5-rc.2 / Cordis 4.0.2，pnpm peers check 无冲突；没有修改宿主依赖。
 - 实际 React 设置组件经 Chromium 隔离渲染，已检查桌面、深色和 390px 窄屏；窄屏说明挤压问题已修复。图片在 assets/，生成器为 scripts/preview-ui.mjs。
+- 搜索选择器通过 `node scripts/check-selector-ui.mjs --screenshots` 的隔离 Chromium 检查：桌面、390px 窄屏、深色各 14 项交互检查，并通过 CDP 核对展开面板实际尺寸和位置。测试使用模拟 Remote，不接触运行中会话；预览位于 assets/search-picker-*.png。
 - 生产构建通过：服务端 ESM、客户端 CJS 与声明文件均生成；verify-package.mjs 检查通过；lib/index.js 的 Node native import 通过。
+- 本次会话实时性需要服务端和客户端一起重载。没有擅自重启正在运行的 DSH；上述隔离验证不等于完成了运行中实例的服务端更新。
 
 ### 回归覆盖
 
@@ -14,7 +16,10 @@
 | --- | --- |
 | tests/mcp.spec.ts（29 项） | 握手、JSON/SSE、ID、多行与分块、超时/取消、响应上限、空结果/坏格式、无重试、脱敏 |
 | tests/keyless-access.spec.ts（6 项） | 显式访问方式、匿名 REST 地址限制、不读取 Key、403 提示、限流不回退、实时性 |
-| tests/v2-host-integration.spec.ts（13 项） | 真实 Cordis/Storage/Session/工具/PTC 服务链、持久隔离、重启、fork、取消、限流、晚挂载和拒绝后重试 |
+| tests/v2-host-integration.spec.ts（17 项） | 真实 Cordis/Storage/Session/工具/PTC 服务链、会话实时性隔离、旧 schema 重开、跨字段 CAS、冻结请求、重启、fork、取消、晚挂载和拒绝后重试 |
+| tests/session-selection.spec.ts（7 项） | 一次性默认值补全、会话隔离、连接切换保留实时性、原子保存与分叉 |
+| tests/client-injection.spec.ts（2 项） | 真实 Cordis 缺失注入错误复现、选择器 Remote 注入与生命周期 |
+| tests/selector-render.spec.ts（4 项） | 紧凑菜单、会话实时性、隐藏不可用连接和空分组、不展示配置说明与凭据、错误反馈 |
 | tests/session-model.spec.ts（55 项） | 请求头优先、settings 路由、内置目录补齐、凭据边界、adapter 身份与快照 |
 | tests/settings-render.spec.ts（2 项） | 实际组件 SSR、可访问标签、访问方式、只读态、不触发供应商网络 |
 | 其余配置/客户端/协议/插件测试 | 稀疏写入、revision 冲突、迁移、固定模型和结构化协议、包契约 |

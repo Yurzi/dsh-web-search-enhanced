@@ -12,7 +12,7 @@
 
 ## 2. 会话与执行上下文
 
-src/dsh/session-selection.ts 将 connectionId/revision 存入私有 Storage Domain，以完整 Session ID 隔离并提供乐观并发控制。fork 复制父会话当前值，之后独立；保存过的不可用选择不会偷偷改为另一连接。
+src/dsh/session-selection.ts 将 connectionId/freshness/revision 存入私有 Storage Domain，以完整 Session ID 隔离并提供乐观并发控制。fork 复制父会话当前值，之后独立；保存过的不可用选择不会偷偷改为另一连接。
 
 src/dsh/bridge.ts 通过真实 agent/request waterfall 建立快照。工具签名保持原生兼容；实际 agent 只从 exec.agent 获得，通过私有 AsyncLocalStorage 传入 Web provider。模型工具参数、公共 WebSearchContext 和 Session 元数据中均没有可伪造的选会话字段。
 
@@ -68,7 +68,7 @@ src/dsh/session-model.ts 的优先级：
 
 ## 5. 实时性
 
-freshness=auto/fresh/realtime 为顶层持久偏好，在快照中固定。
+freshness=auto/fresh/realtime 为会话持久偏好，与连接共用 revision，在请求快照中固定。设置中的 freshness 只作为新会话默认值，切换连接保留实时性。Storage Domain 保持版本 1，schema 新增可选字段以兼容旧记录；首次读取时原子补入默认值，保留已有连接（包括 null）和 revision，之后不再跟随默认值变化。get 返回有效会话实时性，set 支持仅更新连接、仅更新实时性或同时更新，至少包含一个改动。
 
 - Firecrawl：fresh=86400000 ms、realtime=0，放入内联 scrapeOptions.maxAge。
 - Exa REST：fresh=24 h、realtime=0，放入 contents.maxAgeHours。
@@ -81,7 +81,7 @@ freshness=auto/fresh/realtime 为顶层持久偏好，在快照中固定。
 
 实际布局由受托 gemini-flash-latest 初步重设计，主代理补充显式访问方式、普通连接表单和窄屏修复。原生 HTML 表单有 label、错误/状态区域和禁用态；JSON 被折叠为高级选项。
 
-会话选择器使用 conversation.input.right 追加槽；不替换输入组件、不猜测首消息提交顺序。空白会话尚无独立选择器，由安装补丁的新会话默认处理。
+会话选择器使用 conversation.input.right 追加槽；不替换输入组件、不猜测首消息提交顺序。Remote 挂载后通过独立的 remote.searchConnections 注入作用域注册，避免未声明依赖导致插槽崩溃。外观参考宿主 ModelSelect 的 28px 触发器、24px 圆角、20px 菜单圆角及主题令牌；使用原生 top-layer popover 避免被输入框裁剪。面板仅展示可用连接及当前会话实时性，隐藏不可用连接、空分组和冗余顶部标题，不展示配置/凭据/可用性详情，也不因此自动替换已保存的连接。支持键盘导航、Esc 和焦点恢复，保存提示不撑高输入区。空白会话尚无独立选择器，由安装补丁的新会话默认处理。
 
 ## 7. 有意保留的限制
 

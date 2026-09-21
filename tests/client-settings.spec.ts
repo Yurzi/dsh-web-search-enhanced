@@ -45,7 +45,8 @@ describe('settings card helpers', () => {
   it('mounts plugin remotes and an additive selector without replacing composer/model slots', async () => {
     const register = vi.fn()
     const mount = vi.fn(async () => async () => {})
-    const ctx = {
+    const ctx: any = {
+      inject: (keys: string[], fn: (scope: unknown) => unknown) => { expect(keys).toEqual(['remote.searchConnections']); return fn(ctx) },
       locale: { register: vi.fn() }, effect: (fn: () => unknown) => fn(),
       settingsScope: { bind: () => ({}) },
       slots: { inject: (_name: string, fn: () => unknown) => fn(), register },

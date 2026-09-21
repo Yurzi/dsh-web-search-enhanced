@@ -19,6 +19,7 @@ import { Session, type SessionId } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { CodeRuntime, type CodeRunRequest, type CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { z } from 'zod'
 import { installBridge } from '../src/dsh/bridge.ts'
 import { resolveSettings, type V2Config } from '../src/config.ts'
 import type { SelectionView } from '../src/remote-contract.ts'
@@ -46,7 +47,7 @@ class FixtureCodeRuntime extends CodeRuntime {
     return { logs: [], value: await tools.functions.web_search!({ queries: ['ptc one', 'ptc two'] }) }
   }
 }
-async function host(root?: string, mode: 'native' | 'ptc' = 'native', deferStorage = false) {
+async function host(root?: string, mode: 'native' | 'ptc' = 'native', deferStorage = false, legacy = false) {
   if (!root) {
     root = await mkdtemp(join(tmpdir(), 'search-host-test-'))
     const dir = root
@@ -79,6 +80,14 @@ async function host(root?: string, mode: 'native' | 'ptc' = 'native', deferStora
   const substrate = new FixtureCodeRuntime(ctx)
   new ToolRuntime(ctx, { mode })
   await ctx.plugin(ToolWeb, { search: true, fetch: false }).await()
+  if (legacy) {
+    const oldDomain = StorageDomain.defineDomain({ name: 'web_search_enhanced', version: 1, tables: {
+      selections: StorageDomain.domainTable(z.object({connectionId:z.string().nullable(),revision:z.number().int().nonnegative()}).strict()),
+    } })
+    const old = await ctx.storageDomain.open(oldDomain)
+    await old.table('selections').put('one',{connectionId:null,revision:5})
+    await old.close()
+  }
   let settings = resolveSettings(config)
   const bridge = installBridge(ctx, () => settings)
   await vi.waitFor(() => expect(ctx.get('searchConnections')).toBeDefined())
@@ -106,6 +115,67 @@ function successTransport() {
 }
 
 describe('V2 installed DSH host integration (no network)', () => {
+  it('persists session freshness independently, preserves it across switches and freezes the current request', async () => {
+    const fetch = successTransport(), h = await host()
+    await Promise.all([h.capture('one'),h.capture('two')])
+    const frozen = h.bridge.contexts.peek(h.agents.get('one')!)!
+    expect(await h.invoke('set',{sessionId:'one',freshness:'realtime',expectedRevision:0})).toMatchObject({freshness:'realtime',selection:{connectionId:'custom:a',freshness:'realtime',revision:1}})
+    await h.capture('one')
+    expect(h.bridge.contexts.peek(h.agents.get('one')!)).toBe(frozen)
+    await h.execute('one')
+    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body)).contents.maxAgeHours).toBeUndefined()
+    await expect(h.invoke('set',{sessionId:'one',connectionId:'custom:b',expectedRevision:0})).rejects.toMatchObject({code:'gateway/bad-request'})
+    expect(await h.invoke('set',{sessionId:'one',connectionId:'custom:b',expectedRevision:1})).toMatchObject({freshness:'realtime',selection:{revision:2}})
+    await expect(h.invoke('set',{sessionId:'one',freshness:'fresh',expectedRevision:1})).rejects.toMatchObject({code:'gateway/bad-request'})
+    h.changeSettings({...config,freshness:'fresh'})
+    await Promise.all([h.capture('one',1),h.capture('two',1)])
+    await Promise.all([h.execute('one'),h.execute('two')])
+    expect(fetch.mock.calls.slice(1).map(c=>JSON.parse(String(c[1]?.body)).contents.maxAgeHours)).toEqual([0,undefined])
+    expect(await h.invoke('get',{sessionId:'two'})).toMatchObject({freshness:'auto',selection:{revision:0}})
+    await h.ctx.fiber.dispose()
+    const reopened = await host(h.root)
+    expect(await reopened.invoke('get',{sessionId:'one'})).toMatchObject({freshness:'realtime',selection:{connectionId:'custom:b',revision:2}})
+    expect(await reopened.invoke('get',{sessionId:'two'})).toMatchObject({freshness:'auto'})
+  })
+  it('opens old schema records without destructive migration and materializes the default durably', async () => {
+    const h = await host(undefined,'native',false,true)
+    h.changeSettings({...config,freshness:'fresh'})
+    expect(await h.invoke('get',{sessionId:'one'})).toMatchObject({freshness:'fresh',selection:{connectionId:null,revision:5,freshness:'fresh'}})
+    h.changeSettings({...config,freshness:'realtime'})
+    expect(await h.invoke('get',{sessionId:'one'})).toMatchObject({freshness:'fresh'})
+    expect(await h.invoke('get',{sessionId:'two'})).toMatchObject({freshness:'realtime'})
+    await h.ctx.fiber.dispose()
+    const reopened = await host(h.root)
+    expect(await reopened.invoke('get',{sessionId:'one'})).toMatchObject({freshness:'fresh',selection:{connectionId:null,revision:5}})
+    expect(await reopened.invoke('set',{sessionId:'one',freshness:'auto',expectedRevision:5})).toMatchObject({freshness:'auto',selection:{connectionId:null,revision:6}})
+  })
+  it('inherits both session values for seeded forks and keeps subsequent edits independent', async () => {
+    const h = await host()
+    await h.invoke('set',{sessionId:'one',connectionId:null,freshness:'realtime',expectedRevision:0})
+    const base = Session.create(sid('fork'))
+    const session = Session.create(sid('fork'),[],{...base.header,parentSession:sid('one'),isSeeded:true},base.inheritedEventCount)
+    h.agents.set('fork',{id:'fork',ctx:h.ctx,session} as unknown as Agent)
+    expect(await h.invoke('get',{sessionId:'fork'})).toMatchObject({freshness:'realtime',selection:{connectionId:null,revision:0}})
+    await h.invoke('set',{sessionId:'fork',connectionId:'custom:b',freshness:'fresh',expectedRevision:0})
+    await h.invoke('set',{sessionId:'one',freshness:'auto',expectedRevision:1})
+    expect(await h.invoke('get',{sessionId:'fork'})).toMatchObject({freshness:'fresh',selection:{connectionId:'custom:b',revision:1}})
+    expect(await h.invoke('get',{sessionId:'one'})).toMatchObject({freshness:'auto',selection:{connectionId:null,revision:2}})
+  })
+  it('rejects invalid partial requests and authorizes freshness-only updates without validating the retained connection', async () => {
+    const h = await host()
+    await h.invoke('get',{sessionId:'one'})
+    const count = h.authorize.mock.calls.length
+    for (const patch of [{},{freshness:'bad'},{freshness:null},{freshness:'fresh',extra:true},{connectionId:4},{freshness:'auto',expectedRevision:0.5}]) {
+      await expect(h.invoke('set',{sessionId:'one',expectedRevision:0,...patch})).rejects.toMatchObject({code:'gateway/bad-request'})
+    }
+    expect(h.authorize).toHaveBeenCalledTimes(count)
+    await expect(h.invoke('set',{sessionId:'child',freshness:'fresh',expectedRevision:0})).rejects.toMatchObject({code:'session/agent-busy'})
+    h.changeSettings({version:2}) // retained custom:a no longer exists
+    expect(await h.invoke('set',{sessionId:'one',freshness:'fresh',expectedRevision:0})).toMatchObject({freshness:'fresh',selection:{connectionId:'custom:a',revision:1}})
+    await expect(h.invoke('set',{sessionId:'one',connectionId:'custom:a',expectedRevision:1})).rejects.toMatchObject({code:'gateway/bad-request'})
+    expect(await h.invoke('set',{sessionId:'one',connectionId:null,expectedRevision:1})).toMatchObject({freshness:'fresh',selection:{connectionId:null,revision:2}})
+    expect(await h.invoke('set',{sessionId:'one',freshness:'realtime',expectedRevision:2})).toMatchObject({freshness:'realtime',selection:{connectionId:null,revision:3}})
+  })
   it('discovers source @Remote methods, delegates authorization, isolates sessions and persists CAS across reopen', async () => {
     successTransport()
     const h = await host()
@@ -127,13 +197,13 @@ describe('V2 installed DSH host integration (no network)', () => {
     expect(results.filter(r => r.status === 'rejected')).toHaveLength(1)
     const saved = (await h.invoke('get', { sessionId: 'one' })).selection
     expect(saved.revision).toBe(1)
-    expect((await h.invoke('get', { sessionId: 'two' })).selection).toEqual({ connectionId: 'custom:a', revision: 0 })
+    expect((await h.invoke('get', { sessionId: 'two' })).selection).toEqual({ connectionId: 'custom:a', revision: 0, freshness: 'auto' })
     h.ctx.emit('session/disposed', h.agents.get('one')!.session)
     expect((await h.invoke('get', { sessionId: 'one' })).selection).toEqual(saved)
     await h.ctx.fiber.dispose()
     const reopened = await host(h.root)
     expect((await reopened.invoke('get', { sessionId: 'one' })).selection).toEqual(saved)
-    expect((await reopened.invoke('get', { sessionId: 'two' })).selection).toEqual({ connectionId: 'custom:a', revision: 0 })
+    expect((await reopened.invoke('get', { sessionId: 'two' })).selection).toEqual({ connectionId: 'custom:a', revision: 0, freshness: 'auto' })
     await expect(reopened.invoke('set', { sessionId: 'one', connectionId: 'custom:a', expectedRevision: 0 })).rejects.toMatchObject({ code: 'gateway/bad-request' })
   })
 
@@ -155,10 +225,10 @@ describe('V2 installed DSH host integration (no network)', () => {
     await h.capture('two', 1)
     await Promise.all([h.execute('one'), h.execute('two')])
     expect(fetch.mock.calls.slice(2).map(c => String(c[0])).sort()).toEqual(['https://a.invalid/search', 'https://b.invalid/search'])
-    expect(fetch.mock.calls.slice(2).map(c => JSON.parse(String(c[1]?.body)).contents.maxAgeHours)).toEqual([0, 0])
+    expect(fetch.mock.calls.slice(2).map(c => JSON.parse(String(c[1]?.body)).contents.maxAgeHours)).toEqual([undefined, 0])
     expect(JSON.stringify(first)).not.toContain('fixture-secret-not-a-key')
     expect(h.bridge.diagnostics()).toHaveLength(4)
-    expect(h.bridge.diagnostics()[2]).toMatchObject({requested:'realtime',freshnessVerified:false})
+    expect(h.bridge.diagnostics()[2]).toMatchObject({requested:'auto',freshnessVerified:false})
     expect(JSON.stringify(h.bridge.diagnostics())).not.toContain('alpha')
     expect(JSON.stringify(h.bridge.diagnostics())).not.toContain('fixture-secret-not-a-key')
     h.ctx.emit('agent/disposed', { agent: h.agents.get('one')! } as never)

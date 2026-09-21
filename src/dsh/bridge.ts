@@ -5,6 +5,7 @@ import type {} from '@deepseek-ai/dsh-api-session-controller'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import type { Freshness } from '../catalog.ts'
 import type { ResolvedSettings, FixedBinding } from '../config.ts'
 import { ExecutionContexts, type SearchSnapshot } from './execution-context.ts'
 import { captureFollowSettings, FollowRequest, FollowModelError } from './session-model.ts'
@@ -29,7 +30,8 @@ export class SearchConnections extends TypertRemoteService {
     return found.agent
   }
   private async view(agent: Agent): Promise<SelectionView> {
-    return { selection: await this.runtime.initialize(agent.session, agent), connections: await this.runtime.describe(agent), freshness: this.runtime.settings().freshness }
+    const selection = await this.runtime.initialize(agent.session, agent)
+    return { selection, connections: await this.runtime.describe(agent), freshness: selection.freshness! }
   }
   @Remote
   async get(request: { sessionId: string }): Promise<SelectionView> {
@@ -38,18 +40,18 @@ export class SearchConnections extends TypertRemoteService {
     return this.view(await this.authorized(parsed.data.sessionId))
   }
   @Remote
-  async set(request: { sessionId: string; connectionId: string | null; expectedRevision: number }): Promise<SelectionView> {
+  async set(request: { sessionId: string; connectionId?: string | null; freshness?: Freshness; expectedRevision: number }): Promise<SelectionView> {
     const parsed = setRequest.safeParse(request)
     if (!parsed.success) throw new RemoteError('gateway/bad-request', 'Invalid search selection request', {})
     const agent = await this.authorized(parsed.data.sessionId)
     const session = agent.session
-    const { connectionId, expectedRevision } = parsed.data
-    if (connectionId !== null) {
+    const { connectionId, freshness, expectedRevision } = parsed.data
+    if (connectionId !== undefined && connectionId !== null) {
       const c = this.runtime.settings().connections[connectionId]
       if (!c || c.disabled) throw new RemoteError('gateway/bad-request', 'Search connection is missing or disabled', {})
     }
     await this.runtime.initialize(session, agent)
-    try { await (await this.runtime.selections()).set(session.id, connectionId, expectedRevision) }
+    try { await (await this.runtime.selections()).set(session.id, { ...(connectionId !== undefined ? { connectionId } : {}), ...(freshness !== undefined ? { freshness } : {}) }, expectedRevision) }
     catch (error) {
       if (error instanceof SelectionConflict) throw new RemoteError('gateway/bad-request', error.message, {})
       throw new RemoteError('gateway/internal', 'Search selection could not be persisted', {})
@@ -114,17 +116,18 @@ export function installBridge(ctx: Context, settings: () => ResolvedSettings) {
     },
     async initialize(session, agent) {
       const selections = await runtime.selections()
+      const config = settings()
       return selections.get(session.id, async () => {
         const parent = session.header.parentSession
         // Fork current plugin selection once; historical fork-boundary routing is not exported.
         if (parent && session.header.isSeeded) {
-          return (await selections.get(parent, async () => null)).connectionId
+          const inherited = await selections.get(parent, async () => null, config.freshness)
+          return { connectionId: inherited.connectionId, freshness: inherited.freshness! }
         }
-        const config = settings()
         if (config.defaultConnection !== undefined) return config.defaultConnection
         const available = (await runtime.describe(agent)).filter(c => c.configured)
         return available.length === 1 ? available[0]!.id : null
-      })
+      }, config.freshness)
     },
   }
   ctx.on('agent/request', async (payload, next) => {

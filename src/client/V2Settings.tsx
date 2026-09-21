@@ -224,19 +224,19 @@ export function V2Settings({ scope, credentials }: V2SettingsProps) {
                 <p className="v2s-hint">新建会话时初始选中的搜索连接。已有会话不受影响。</p>
               </div>
               <div className="v2s-field">
-                <label className="v2s-label" htmlFor={bodyId + '-freshness'}>内容实时性（全局）</label>
+                <label className="v2s-label" htmlFor={bodyId + '-freshness'}>新会话默认实时性</label>
                 <select
                   id={bodyId + '-freshness'}
                   className="v2s-select"
                   disabled={disabled}
                   value={config.freshness ?? 'auto'}
                   onChange={e => {
-                    void act(() => mutate(sparseSettingOperations(snapshot, ['freshness'], e.target.value, 'auto')), '已保存全局内容实时性。')
+                    void act(() => mutate(sparseSettingOperations(snapshot, ['freshness'], e.target.value, 'auto')), '已保存新会话默认实时性，已有会话不受影响。')
                   }}
                 >
                   {Object.entries(freshnessLabels).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
                 </select>
-                <p className="v2s-hint">优先新鲜：支持时使用不超过 24 小时的内容缓存；优先实时：重新获取页面。两者可能增加延迟和额度消耗；不支持的连接忽略此偏好。</p>
+                <p className="v2s-hint">仅作为新会话初始值，已有会话可在输入区单独选择。优先新鲜：支持时使用不超过 24 小时的内容缓存；优先实时：重新获取页面。两者可能增加延迟和额度消耗；不支持的连接忽略此偏好。</p>
               </div>
             </div>
           </div>

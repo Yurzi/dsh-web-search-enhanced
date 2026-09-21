@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
 import { SESSION_MODEL_ID, SESSION_MODEL_LABEL, type Freshness } from '../catalog.ts'
 import { selectorCss } from './search-selector.css.ts'
@@ -14,7 +14,7 @@ export interface SearchSelectionResponse {
 }
 export interface SearchConnectionRemote {
   get(request: { sessionId: string }): Promise<RemoteResult<SearchSelectionResponse>>
-  set(request: { sessionId: string; connectionId: string | null; expectedRevision: number }): Promise<RemoteResult<SearchSelectionResponse>>
+  set(request: { sessionId: string; connectionId?: string | null; freshness?: Freshness; expectedRevision: number }): Promise<RemoteResult<SearchSelectionResponse>>
 }
 export interface SearchConnectionSelectorProps { sessionId: string; remote: SearchConnectionRemote }
 
@@ -44,34 +44,34 @@ function SessionSelector({ sessionId, remote }: SearchConnectionSelectorProps) {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [pending, setPending] = useState(false)
-  const controller = useRef<{ refresh(): Promise<void>; select(id: string | null, revision: number): Promise<void> }>()
+  const controller = useRef<{ refresh(clearError?: boolean): Promise<void>; select(id: string | null | undefined, revision: number, freshness?: Freshness): Promise<void> }>()
   useEffect(() => {
     const guard = createResponseGuard()
     let writing = false
     let reading = false
     setValue(undefined); setError(''); setNotice(''); setPending(false)
-    const refresh = async () => {
+    const refresh = async (clearError = false) => {
       if (writing || reading) return
       reading = true
       const token = guard.begin()
       try {
         const result = await remote.get({ sessionId })
         if (!guard.accepts(token)) return
-        if (result.ok) setValue(result.value)
+        if (result.ok) { setValue(result.value); if (clearError) setError('') }
         else setError(result.error.message)
       } catch { if (guard.accepts(token)) setError('读取搜索连接失败，请重试。') }
       finally { reading = false }
     }
-    const select = async (connectionId: string | null, expectedRevision: number) => {
+    const select = async (connectionId: string | null | undefined, expectedRevision: number, freshness?: Freshness) => {
       if (writing) return
       writing = true
       const token = guard.begin() // invalidate an older poll before crossing the write boundary
       setPending(true); setError(''); setNotice('')
       let refreshAfterFailure = false
       try {
-        const result = await remote.set({ sessionId, connectionId, expectedRevision })
+        const result = await remote.set({ sessionId, ...(connectionId !== undefined ? { connectionId } : {}), ...(freshness !== undefined ? { freshness } : {}), expectedRevision })
         if (!guard.accepts(token)) return
-        if (result.ok) { setValue(result.value); setNotice('已保存，下一次模型请求生效；已发出的搜索不变。') }
+        if (result.ok) { setValue(result.value); setNotice('已保存，下一次模型请求生效。') }
         else { setError(result.error.message + '（已请求刷新，请核对后重试。）'); refreshAfterFailure = true }
       } catch { if (guard.accepts(token)) { setError('保存失败，未确认切换；请刷新核对后重试。'); refreshAfterFailure = true } }
       finally {
@@ -90,23 +90,95 @@ function SessionSelector({ sessionId, remote }: SearchConnectionSelectorProps) {
     return () => { guard.cancel(); controller.current = undefined; window.clearInterval(timer); window.removeEventListener('focus', focus) }
   }, [sessionId, remote])
   const connections = useMemo(() => discoverableConnections(value?.connections ?? []), [value?.connections])
+  useEffect(() => {
+    if (!notice) return
+    const timer = window.setTimeout(() => setNotice(''), 3000)
+    return () => window.clearTimeout(timer)
+  }, [notice])
+  return <SearchSelectorControl value={value} connections={connections} pending={pending} error={error} notice={notice}
+    onSelect={id => { if (value) void controller.current?.select(id, value.selection.revision) }}
+    onFreshness={freshness => { if (value) void controller.current?.select(undefined, value.selection.revision, freshness) }}
+    onRefresh={() => { void controller.current?.refresh(true) }} />
+}
+
+export interface SearchSelectorControlProps {
+  value?: SearchSelectionResponse | undefined
+  connections: SearchConnectionView[]
+  pending: boolean
+  error: string
+  notice: string
+  onSelect(id: string | null): void
+  onFreshness(freshness: Freshness): void
+  onRefresh(): void
+}
+
+/** Native popovers live in the top layer, outside the composer's clipping boundary. */
+export function SearchSelectorControl({ value, connections, pending, error, notice, onSelect, onFreshness, onRefresh }: SearchSelectorControlProps) {
+  const id = useId()
+  const panel = useRef<HTMLDivElement>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
+  const [open, setOpen] = useState(false)
   const selected = value?.selection.connectionId
   const current = connections.find(c => c.id === selected)
+  const label = !value ? '搜索' : current?.id === SESSION_MODEL_ID ? '跟随模型' : current?.label ?? (selected ? '连接失效' : '选择搜索')
+  useEffect(() => {
+    const node = panel.current
+    if (!node) return
+    const sync = () => setOpen(node.matches(':popover-open'))
+    const close = () => { if (node.matches(':popover-open')) node.hidePopover() }
+    node.addEventListener('toggle', sync)
+    window.addEventListener('resize', close)
+    return () => { node.removeEventListener('toggle', sync); window.removeEventListener('resize', close) }
+  }, [])
+  const toggle = () => {
+    const node = panel.current, button = trigger.current
+    if (!node || !button) return
+    if (node.matches(':popover-open')) { node.hidePopover(); return }
+    const rect = button.getBoundingClientRect()
+    const width = Math.min(280, window.innerWidth - 32)
+    node.style.width = width + 'px'
+    node.style.left = Math.max(16, Math.min(rect.right - width, window.innerWidth - width - 16)) + 'px'
+    const above = rect.top, below = window.innerHeight - rect.bottom
+    node.style.top = above >= below ? 'auto' : (rect.bottom + 8) + 'px'
+    node.style.bottom = above >= below ? (window.innerHeight - rect.top + 8) + 'px' : 'auto'
+    node.style.maxHeight = Math.max(60, Math.min(400, Math.max(above, below) - 24)) + 'px'
+    node.showPopover()
+    ;(node.querySelector<HTMLButtonElement>('button[aria-pressed="true"]:not(:disabled)') ?? node.querySelector<HTMLButtonElement>('button:not(:disabled)'))?.focus()
+  }
   return <div className="v2s-selector">
     <style>{selectorCss}</style>
-    <label className="v2s-selector-control" title="仅影响当前会话；下一次模型请求生效"><span>搜索</span><select aria-label="当前会话搜索连接" disabled={!value || pending} value={selected ?? ''} onChange={event => { if (value) void controller.current?.select(event.target.value || null, value.selection.revision) }}>
-      <option value="">{value ? '未选择搜索连接' : '正在读取…'}</option>
-      {selected && !current ? <option value={selected}>已失效 / 已删除：{selected}</option> : null}
-      {(['model', 'structured'] as const).map(kind => <optgroup key={kind} label={kind === 'model' ? '模型搜索' : '结构化搜索'}>
-        {connections.filter(c => c.kind === kind).map(c => <option key={c.id} value={c.id} disabled={!c.configured && c.id !== SESSION_MODEL_ID}>{c.label}{c.keyless ? ' · 免 Key' : c.configured ? '' : '（不可用）'}</option>)}
-      </optgroup>)}
-    </select></label>
-    {value ? <span> · 内容实时性：{freshnessLabels[value.freshness]}（全局）</span> : null}
-    {current && !current.configured ? <p role="status">{current.reason ?? '未配置凭据或连接不可用，请在设置 → 插件中管理搜索连接。'}</p> : null}
-    {selected && !current ? <p role="status">保留原选择，不会自动换服务。请在设置 → 插件中修复或显式选择其他连接。</p> : null}
-    <details><summary>可用性与配置</summary>{connections.filter(c => !c.configured).map(c => <p key={c.id}>{c.label}：{c.reason ?? '请配置凭据'}{c.credentialRef ? '（' + c.credentialRef + '）' : ''}</p>)}<p>管理入口：设置 → 插件 → 搜索连接。未配置不影响普通聊天。</p></details>
-    {pending ? <p role="status">正在保存，尚未确认切换…</p> : null}
-    {notice ? <p role="status">{notice}</p> : null}
-    {error ? <p role="alert">{error} <button type="button" disabled={pending} onClick={() => { void controller.current?.refresh() }}>刷新</button></p> : null}
+    <button ref={trigger} type="button" className="v2s-search-trigger" aria-label={'搜索连接：' + label}
+      aria-haspopup="dialog" aria-expanded={open} aria-controls={id}
+      data-state={error ? 'error' : pending ? 'saving' : notice ? 'saved' : 'ready'}
+      title={error || (pending ? '正在保存…' : notice || '搜索连接：' + (current?.label ?? '未选择'))}
+      onClick={toggle}>
+      <svg className={pending ? 'v2s-search-icon v2s-search-busy' : 'v2s-search-icon'} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c4 4 4 14 0 18M12 3c-4 4-4 14 0 18"/></svg>
+      <span className="v2s-search-label">{label}</span>
+      {value ? <span className="v2s-search-mode">{value.freshness === 'auto' ? '自动' : value.freshness === 'fresh' ? '新鲜' : '实时'}</span> : null}
+      {error ? <span className="v2s-search-error-dot" aria-hidden="true">!</span> : notice ? <span className="v2s-search-check" aria-hidden="true">✓</span> : null}
+      <svg className="v2s-search-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg>
+    </button>
+    <span className="v2s-search-sr" role="status" aria-live="polite">{error || (pending ? '正在保存' : notice)}</span>
+    <div ref={panel} id={id} {...{ popover: 'auto' }} role="dialog" aria-label="当前会话搜索设置" className="v2s-selector-panel"
+      onKeyDown={event => {
+        if (event.key === 'Escape') { panel.current?.hidePopover(); trigger.current?.focus(); return }
+        if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+        const items = [...(panel.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])]
+        if (!items.length) return
+        event.preventDefault()
+        const index = items.indexOf(document.activeElement as HTMLButtonElement)
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (index + (event.key === 'ArrowUp' ? -1 : 1) + items.length) % items.length
+        items[next]?.focus()
+      }}>
+      {(['model', 'structured'] as const).filter(kind => connections.some(c => c.kind === kind && c.configured)).map(kind => <div key={kind} role="group" aria-label={kind === 'model' ? '模型搜索' : '搜索服务'}>
+        <div className="v2s-search-group-title">{kind === 'model' ? '模型搜索' : '搜索服务'}</div>
+        {connections.filter(c => c.kind === kind && c.configured).map(c => <button key={c.id} type="button" className="v2s-search-option" disabled={!value || pending || !c.configured} aria-pressed={c.id === selected} onClick={() => { if (c.configured && c.id !== selected) onSelect(c.id) }}><span>{c.label}</span><span className="v2s-search-option-check" aria-hidden="true">{c.id === selected ? '✓' : ''}</span></button>)}
+      </div>)}
+      <div className="v2s-search-freshness" role="group" aria-label="当前会话内容实时性">
+        <div className="v2s-search-group-title">内容实时性</div>
+        <div className="v2s-search-segments">{(['auto', 'fresh', 'realtime'] as const).map(mode => <button key={mode} type="button" aria-pressed={value?.freshness === mode} disabled={!value || pending} onClick={() => { if (value?.freshness !== mode) onFreshness(mode) }}>{freshnessLabels[mode]}</button>)}</div>
+      </div>
+      {error ? <div className="v2s-search-error" role="alert"><span>{error}</span><button type="button" disabled={pending} onClick={onRefresh}>重试</button></div> : null}
+    </div>
   </div>
 }

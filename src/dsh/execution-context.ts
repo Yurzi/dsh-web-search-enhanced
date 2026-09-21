@@ -21,7 +21,7 @@ export class ExecutionContexts {
     const previous = this.snapshots.get(agent)
     if (previous?.turn === turn && previous.step === step && previous.errorCode !== 'WEB_SEARCH_STORAGE_UNAVAILABLE') return previous
     const connection = selection.connectionId === null ? undefined : settings.connections[selection.connectionId]
-    const snapshot: SearchSnapshot = freeze(structuredClone({ sessionId, turn, step, selection: { connectionId: selection.connectionId, revision: selection.revision }, freshness: settings.freshness,
+    const snapshot: SearchSnapshot = freeze(structuredClone({ sessionId, turn, step, selection: { ...selection }, freshness: selection.freshness ?? settings.freshness,
       ...(connection ? { connection } : {}), ...(error ? { error } : {}), ...(errorCode ? { errorCode } : {}) }))
     this.snapshots.set(agent, snapshot)
     return snapshot

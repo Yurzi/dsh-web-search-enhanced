@@ -26,8 +26,12 @@ export async function apply(ctx: Context): Promise<void> {
   }, V2Settings))
   const dispose = await ctx.remote.$mount(searchContribution)
   ctx.effect(() => dispose, 'search selection remote')
-  ctx.slots.inject('conversation.input.right', () => ctx.slots.register({
-    name: 'conversation.input.right', id: 'search-connection', order: 20,
-    inject: sessionId => ({ sessionId, remote: (ctx.remote as unknown as { searchConnections: SearchConnectionRemote }).searchConnections }),
-  }, SearchConnectionSelector))
+  // This namespace is created by $mount above. A top-level dependency would
+  // prevent apply from running; access it only from its child injection scope.
+  ctx.inject(['remote.searchConnections'], searchCtx => {
+    searchCtx.slots.inject('conversation.input.right', () => searchCtx.slots.register({
+      name: 'conversation.input.right', id: 'search-connection', order: 20,
+      inject: sessionId => ({ sessionId, remote: (searchCtx.remote as unknown as { searchConnections: SearchConnectionRemote }).searchConnections }),
+    }, SearchConnectionSelector))
+  })
 }
