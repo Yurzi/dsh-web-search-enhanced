@@ -1,94 +1,117 @@
-# V2 架构与实现边界
+# 0.1.0 当前架构与实现边界
 
-本文描述当前实现，替代已过时的“尚未实现”设计提案。用户操作见 README；验证证据见 v2-implementation.zh-CN.md。
+本文描述已存在的源码契约，不是未来设计提案或历史验收记录。为避免外部链接失效，保留原文件名。用户配置见[配置参考](configuration.zh-CN.md)，验证方法见[开发验证指南](v2-implementation.zh-CN.md)。
 
-## 1. 配置、目录与凭据
+## 1. 总体职责
 
-- src/catalog.ts：稳定内置 ID、标签、官方 API 地址、凭据引用以及 keyless 能力。
-- src/config.ts：稀疏覆盖和严格校验。内置结构化连接不可改 kind/adapter/endpoint；自定义地址需信任标记。
-- 四种内置结构化服务默认 access=keyless，可显式设置 api-key；自定义服务不开放匿名路径。Tavily/Tinyfish 未设置 access 的旧配置随目录升级为免 Key，显式 api-key 保留。Tinyfish keyless 不支持 research_paper，配置时明确拒绝并提示切换个人 Key。
-- Settings 只保存配置差异与凭据引用。Key 只由 DSH Credentials 管理，不进入快照或浏览器 settings。
-- 安装补丁明确指定新会话默认 Exa；目录本身不按遍历顺序决定选择。
+插件为 DSH 原生 `web_search` 注册 `enhanced-search` provider。模型工具签名、结果结构和宿主访问控制不变；原生调用与 PTC 调用经过同一工具执行链。它不是第二套模型工具，不接管 `web_fetch`，不替换对话模型。
 
-## 2. 会话与执行上下文
+```text
+Settings + 内置 Catalog ── resolveSettings ───────────────┐
+DSH Storage Domain ── SessionSelections ────────────────┤
+实际 agent/request ── 按 agent + turn + step 捕获快照 ──┤
+                                                       ↓
+tools/execute 的 exec.agent → 私有 AsyncLocalStorage → enhanced-search
+                                                       ↓
+                         当前选中的 structured / fixed model / session model
+                                                       ↓
+                         必要时解析 DSH Credential → 单一路径网络请求
+                                                       ↓
+                                 原生 WebSearchResult + 私有实时性诊断
+```
 
-src/dsh/session-selection.ts 将 connectionId/freshness/revision 存入私有 Storage Domain，以完整 Session ID 隔离并提供乐观并发控制。fork 复制父会话当前值，之后独立；保存过的不可用选择不会偷偷改为另一连接。
+安装补丁 [cordis.patch.yml](../cordis.patch.yml) 指定 `web.searchProvider: enhanced-search`、禁用默认 `web-search-deepseek`，并为新会话明确指定 Exa。补丁不指定 `fetchProvider`，保留宿主原有 fetch 选择逻辑。
 
-src/dsh/bridge.ts 通过真实 agent/request waterfall 建立快照。工具签名保持原生兼容；实际 agent 只从 exec.agent 获得，通过私有 AsyncLocalStorage 传入 Web provider。模型工具参数、公共 WebSearchContext 和 Session 元数据中均没有可伪造的选会话字段。
+## 2. 模块边界
 
-成功快照按 agent + turn + step 冻结。中途修改设置、连接、实时性，仅影响下一请求。原生调用和 PTC 共用同一工具实现。
+| 模块 | 职责 |
+| --- | --- |
+| [src/index.ts](../src/index.ts) | 插件 schema、Settings 注册、显式迁移门禁、安装 bridge |
+| [src/catalog.ts](../src/catalog.ts) | 无秘密的稳定内置 ID、地址、默认引用和能力 |
+| [src/config.ts](../src/config.ts) | 稀疏合并、字段白名单、URL / 引用 / options 校验 |
+| [src/migration.ts](../src/migration.ts) | 纯旧配置转换，不读 Key、不写 Settings、不执行 fallback |
+| [src/dsh/bridge.ts](../src/dsh/bridge.ts) | 服务生命周期、授权 Remote、请求钩子与 provider 注册 |
+| [src/dsh/session-selection.ts](../src/dsh/session-selection.ts) | 会话选择持久化、初始化、revision CAS |
+| [src/dsh/execution-context.ts](../src/dsh/execution-context.ts) | WeakMap 快照、递归冻结、AsyncLocalStorage 执行上下文 |
+| [src/dsh/session-model.ts](../src/dsh/session-model.ts) | 跟随模型的非秘密配置捕获、实际模型选择和绑定解析 |
+| [src/search/service.ts](../src/search/service.ts) | 单一路由分派、执行时凭据解析、错误归类 |
+| [src/adapters/structured.ts](../src/adapters/structured.ts) | 四种 REST 适配、受限 options、共享有界 JSON 传输 |
+| [src/adapters/mcp.ts](../src/adapters/mcp.ts) | 私有 keyless MCP 传输与结果解析 |
+| [src/protocols.ts](../src/protocols.ts) | 三种模型协议的请求构造和响应归一化 |
+| [src/remote-contract.ts](../src/remote-contract.ts) | 严格 Remote 请求 / 响应 schema 与调用描述符 |
+| [src/client/V2Settings.tsx](../src/client/V2Settings.tsx) | 当前连接设置界面、稀疏操作和显式导入 |
+| [src/client/SearchConnectionSelector.tsx](../src/client/SearchConnectionSelector.tsx) | 当前会话连接与实时性选择器 |
 
-### 存储生命周期与恢复
+`model-config.ts`、`provider.ts` 的 `createProvider` / `EnhancedSearchProvider` 是兼容固定配置辅助接口；安装版始终走 V2 bridge。旧辅助代码中的环境变量或 fallback 行为不能外推为安装版配置能力。
 
-- 懒打开由 Cordis storageDomain 注入作用域拥有；未完成的实际服务激活会被等待。
-- 同一作用域首次打开 single-flight；拒绝后清除状态，下次可重试。
-- 作用域退出清除 opener，并等待关闭已打开的 Domain。
-- 存储暂不可用产生可恢复的失败快照，不阻止 next() 执行普通推理。服务恢复后，同一 step 的后续请求钩子可以替换该失败快照；已成功的快照不会被替换。
-- 不在工具执行途中重读设置来修补失败快照，避免同一请求偷偷换路由。
-- 错误分类使用固定安全消息，不回传后端路径、原始设置或异常 cause。
+## 3. 配置和秘密分离
 
-当前分别呈现 WEB_SEARCH_STORAGE_UNAVAILABLE、WEB_SEARCH_MIGRATION_REQUIRED、WEB_SEARCH_CONFIG_INVALID。由于原故障插件已经卸载，没有原实例的错误堆栈，不能宣称其中某一种就是原部署的唯一根因。
+当前设置格式为 version 2，包版本为 0.1.0。内置目录只做默认值；用户保存差异，不把目录整表复制到用户层。四种结构化内置连接默认 keyless，访问方式为显式选择，不根据已保存 Key 猜测。自定义连接只允许支持的 adapter 或固定模型协议；新 endpoint 需要信任确认。
 
-## 3. 搜索分派
+内置结构化连接不能重定向地址或改变 adapter。自定义结构化连接只能使用个人 Key；固定模型总是需要显式信任。校验拒绝任意 headers/body、缓存参数、秘密字段等不受支持的 options。禁用连接也参与配置校验。
 
-src/search/service.ts 根据冻结连接分派，不做跨连接 fallback。
+快照只保存凭据引用，不保存 Key。执行时通过 DSH Credentials 解析指定引用；keyless 完全跳过解析。UI 调用 Credentials describe 检查本地配置状态，不用供应商网络探测。保存、重置 Settings 与删除凭据是不同操作。
 
-| 模式 | 传输 | 凭据 |
-| --- | --- | --- |
-| Exa 免 Key | 官方 Streamable HTTP MCP / web_search_exa | 不读取 Credentials |
-| Firecrawl 免 Key | 官方 /v2/search REST | 不读取 Credentials，不发 Authorization |
-| Tavily 免 Key | 官方 /search REST | 仅 X-Tavily-Access-Mode: keyless |
-| Tinyfish 免 Key | 官方 agent.tinyfish.ai/mcp / search | 仅 X-TinyFish-Access-Mode: keyless |
-| 四种结构化服务个人 Key | 各自官方 REST | 显式引用 → Credentials |
-| 固定搜索模型 | 三种协议 adapter | 固定 binding 的引用 |
-| 跟随会话模型 | 同上 | Session provider 的显式 apiKeyEnv |
+## 4. 会话状态与并发
 
-MCP 模块是插件私有传输，当前生产路由由 Exa 与 Tinyfish 使用；它也包含受测的 Firecrawl MCP 格式解析，Firecrawl 正式路由仍固定为 REST，不把二者当作失败重试通道。
+Storage Domain 名称为 `web_search_enhanced`，版本 1，表为 `selections`；用完整 Session ID 作键，记录 `{ connectionId, freshness?, revision }`。不退化为 localStorage 或仅内存状态。
 
-### MCP 边界
+初始化顺序：
 
-src/adapters/mcp.ts：Exa 每次操作独立 initialize → notifications/initialized → tools/call；Tinyfish 按 OpenCode v2 与实测协议直接单次 tools/call，无初始化握手。无跨 Session 的 MCP 缓存，无隐藏重试。传输支持 JSON 和 SSE、多行 data、分块 UTF-8、逐事件/批次匹配 JSON-RPC ID；匹配结果后取消流，无需等待永不结束的 SSE EOF。
+1. 已有记录优先，保留失效连接 ID 和 `null`。
+2. seeded fork 首次初始化时复制父会话当前值；此后独立，不重建历史 fork 边界。
+3. 无记录时使用显式 defaultConnection。
+4. 没有显式默认时，仅有一个本地可用连接才选中，否则为 null。
 
-90 秒操作期限、2 MiB 响应上限、拒绝重定向；即使注入 fetcher/read 不响应取消，也会终止等待。错误不透出上游 body、parser 输入或 cause。源 URL 排除非 HTTP(S)、内嵌认证、控制字符和重复项，并限制字段长度。未知结果格式不得伪装为成功空结果。
+旧记录缺少 freshness 时，首次读取以当前全局默认原子补入，保留连接和 revision；以后不再跟随默认变化。两项偏好共用一个 revision，set 可单独更新连接、单独更新实时性或同时更新，至少含一项。基于 storage update 的 CAS 拒绝过期 revision，本地串行队列避免重复初始化。
 
-Exa 文本的 Title/URL/Published Date/Text/Highlights 及结构化内容统一归一化为原生 WebSearchResult。Firecrawl 的 REST 正文和实时性复用 src/adapters/structured.ts，不重复实现。
+Remote `searchConnections.get/set` 先通过真实 Session Controller 解析并授权 agent；严格 schema 拒绝未知字段。会话 ID 只存在于授权 Remote，不加入模型可控工具参数或公共 WebSearchContext。
 
-### 认证与计费边界
+Domain 在 Cordis 注入作用域懒打开，首次打开 single-flight；失败清除缓存以便重试，退出作用域时等待关闭。`agent/disposed` 清理内存快照；`session/disposed` 不代表耐久删除，不能据此删存储。缺乏可靠删除通知时允许保留孤立记录。
 
-access 是明确选择，不根据“发现有 Key”猜测。匿名限流/拒绝后不读取个人 Key，个人 Key 失败也不转匿名或另一服务。匿名 HTTP 401/403 被解释为 WEB_KEYLESS_UNAVAILABLE；HTTP 429 保留限流分类。
+## 5. 请求冻结与恢复
 
-## 4. 模型绑定
+`agent/request` waterfall 捕获当前选择、解析后连接及实时性。成功快照按 agent 身份 + turn + step 固定，同一步重入不会因用户改设置而改变路由。`tools/execute` 从可信 `exec.agent` 找快照，通过 AsyncLocalStorage 传给 provider，避免并发会话共享全局“当前 Session”。
 
-src/dsh/session-model.ts 的优先级：
+配置、迁移或存储故障被转换成安全失败快照，仍调用 next() 允许普通推理。存储暂不可用是可恢复类别：后续请求钩子可在同一步重新捕获；已成功快照不替换。工具执行中不临时重读设置“修补”失败快照。未知上下文拒绝搜索，不猜测 Session。
 
-1. 实际 agent 的请求头中完整的 provider/model；没有请求头才读同一 agent options，不拼接不完整字段。
-2. llm-pi-ai 设置中该 provider 的 api/baseURL/apiKeyEnv。
-3. 仅 api/baseURL 缺省时，受形状检查的 adapter.config.profiles().get(provider).piProvider.getModels() 目录补齐，不覆盖显式配置。
-4. 首期凭据必须是 apiKeyEnv → Credentials；不重建 scoped credential records、OAuth/订阅或环境认证猜测。
+连接、访问方式、实时性、模型路由配置中途修改只影响后续请求快照；Key 值并未冻结，执行时撤销 / 缺失可以阻止网络请求。
 
-按 step 冻结设置，按 provider/model 缓存解析结果。adapter 身份替换会拒绝旧请求。当前 rc.2 的 model 配置不能覆盖路由字段，插件不假装支持。
+## 6. 分派与传输
 
-## 5. 实时性
+| 选中模式 | 生产路由 |
+| --- | --- |
+| Exa keyless | 官方 MCP，initialize → notifications/initialized → tools/call (`web_search_exa`) |
+| Tinyfish keyless | 官方 MCP，直接单次 tools/call (`search`)，带访问模式头，不初始化 |
+| Firecrawl keyless | 官方 `/v2/search` REST，不发送 Authorization |
+| Tavily keyless | 官方 `/search` REST，只用 keyless 访问模式头 |
+| 四种服务个人 Key | 各自 REST；Exa/Tinyfish 使用 X-API-Key，Firecrawl/Tavily 使用 Bearer |
+| 固定 / 跟随模型 | Anthropic Messages、OpenAI Responses 或 Chat Completions |
 
-freshness=auto/fresh/realtime 为会话持久偏好，与连接共用 revision，在请求快照中固定。设置中的 freshness 只作为新会话默认值，切换连接保留实时性。Storage Domain 保持版本 1，schema 新增可选字段以兼容旧记录；首次读取时原子补入默认值，保留已有连接（包括 null）和 revision，之后不再跟随默认值变化。get 返回有效会话实时性，set 支持仅更新连接、仅更新实时性或同时更新，至少包含一个改动。
+没有跨服务 fallback、匿名与付费互转、自动重试或自动翻页。Firecrawl MCP 格式解析是适配器内部受测能力，不是正式 Firecrawl 路由或 REST 失败后的备用通道。
 
-- Firecrawl：fresh=86400000 ms、realtime=0，放入内联 scrapeOptions.maxAge。
-- Exa REST：fresh=24 h、realtime=0，放入 contents.maxAgeHours。
-- Exa MCP、Tavily、Tinyfish、模型：不发送猜测参数，诊断 ignored。
-- 参数只表达缓存/抓取偏好，不证明真实内容新鲜度。私有诊断有请求、能力、正文覆盖情况，freshnessVerified 恒为 false。
+REST 共享 fetchJson，MCP 使用私有 Streamable HTTP 客户端；均有 90 秒操作期限、2 MiB 响应上限、取消支持和拒绝重定向。即使注入 transport 忽略 signal，也终止等待并释放晚到响应。MCP 支持 JSON / SSE、多行 data、分块 UTF-8、JSON-RPC ID 精确匹配，拿到匹配结果即取消流，不等待无终点 SSE EOF；不共享跨会话 MCP 会话缓存。
 
-## 6. 前端
+传输 / parser 失败不泄漏原始响应、输入或 cause。来源归一化规则按适配器实现，不应假定所有协议都具备相同去重或日期语义。结构化 REST 限制 URL 协议与内嵌认证，限制标题 / 片段长度；MCP 另过滤控制字符与重复来源。未知结果结构不能伪装为成功空结果。
 
-设置使用官方 settings.plugin.item 槽、SettingsScope 稀疏路径操作与宿主 Credentials remote。样式遵循官方 --dsw-alias-* 颜色/边框令牌和设置卡片结构，作用域限定为 v2s-*；不假称使用了宿主未公开的 React 卡片组件。
+## 7. 跟随模型
 
-实际布局由受托 gemini-flash-latest 初步重设计，主代理补充显式访问方式、普通连接表单和窄屏修复。原生 HTML 表单有 label、错误/状态区域和禁用态；JSON 被折叠为高级选项。
+跟随模式并非自动复用宿主所有认证机制。优先读取实际 agent 请求头的完整 provider/model；仅请求头不存在才读同一 agent options，不补拼不完整路由。
 
-会话选择器使用 conversation.input.right 追加槽；不替换输入组件、不猜测首消息提交顺序。Remote 挂载后通过独立的 remote.searchConnections 注入作用域注册，避免未声明依赖导致插槽崩溃。外观参考宿主 ModelSelect 的 28px 触发器、24px 圆角、20px 菜单圆角及主题令牌；使用原生 top-layer popover 避免被输入框裁剪。面板仅展示可用连接及当前会话实时性，隐藏不可用连接、空分组和冗余顶部标题，不展示配置/凭据/可用性详情，也不因此自动替换已保存的连接。支持键盘导航、Esc 和焦点恢复，保存提示不撑高输入区。空白会话尚无独立选择器，由安装补丁的新会话默认处理。
+每个请求捕获 `llm-pi-ai.providers` 中的非秘密 api/baseURL/apiKeyEnv 及只读目录；只有协议 / 地址缺省才从经过形状检查的 adapter 目录补齐。显式配置不依赖该可选兼容入口。FollowRequest 按 provider/model 缓存解析结果，执行时核对 adapter 身份，替换后拒绝旧请求。实际模型选择在工具执行时解析，而 provider 设置保持请求时快照；不能把它简化成全局固定模型。
 
-## 7. 有意保留的限制
+不重建 scoped credential records，不读取 OAuth / 订阅秘密，不透传自定义 headers，不虚构 rc.2 不支持的 model 级 endpoint/API/凭据覆盖。协议受支持也不代表模型有服务端搜索能力。
 
-- 不把 session/disposed 视为耐久删除；没有可靠删除事件时保留孤立记录。
-- 不重建历史 fork 时刻的选择，不提供跨会话隐式代理。
-- 不读取或写入用户自建密钥文件，不增加自定义 HTTP 路由，不修改 DSH 宿主。
-- Keyless 不是无条件可用承诺，上游可以限流或按 IP 拒绝。
-- UI 隔离渲染、真实 DSH 服务测试不等于已重新安装并验证当前运行 GUI。
+## 8. 实时性和诊断
+
+Firecrawl 的 fresh/realtime 映射为内联 scrapeOptions.maxAge（86400000 / 0 毫秒），Exa REST 为 contents.maxAgeHours（24 / 0 小时）。其他路径不发送猜测参数。Firecrawl 请求正文失败或缺失时不把 SERP 摘要当新正文。
+
+`src/search/diagnostics.ts` 只记录请求偏好、default/applied/ignored/partial、来源及正文数量，`freshnessVerified` 恒为 false。bridge 内存中最多保留 100 条，并附会话 ID、连接 ID 和 step；不保存查询、Key 或上游原始正文，不扩展宿主结果 / Session 事件，不是公共 Remote。
+
+## 9. 客户端与非目标
+
+设置使用官方 `settings.plugin.item` 槽和 SettingsScope 路径操作；凭据使用宿主 Remote。会话选择器通过 `conversation.input.right` 追加槽，Remote 挂载后在独立注入作用域注册，不替换 composer / 模型槽，不抓取 DOM。
+
+选择器只列本地可用连接并隐藏空组，但保留不可用的当前选择以供显式修复；使用原生 popover、键盘导航、Esc 与焦点恢复。主题使用宿主 `--dsw-alias-*` 令牌。空白会话首消息前没有独立选择器，靠默认连接初始化。
+
+本版本不修改 DSH 宿主、不新增任意 HTTP 路由、不维护用户自建密钥文件、不绕过上游限制、不保证匿名服务随时可用。隔离渲染和测试 harness 不等于运行中 GUI 已重新安装；发布 / 部署验证须另行执行并如实记录。

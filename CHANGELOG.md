@@ -1,15 +1,31 @@
-# Changelog
+# 更新日志
 
-All notable changes to the `dsh-web-search-enhanced` package will be documented in this file.
+记录 `dsh-web-search-enhanced` 的用户可见变化。历史条目描述对应版本，不代表当前行为。
 
-## [Unreleased] — V2 branch
+## [0.1.0] - 2026-09-21 🎉
 
-- Add explicit Exa keyless MCP and Firecrawl keyless REST access, with personal API Key modes and no automatic credential/provider fallback.
-- Default newly initialized Sessions to Exa through the installation composition patch; preserve saved selections.
-- Fix late Storage Domain activation and permanently cached open failures; retain actionable snapshot errors and allow recovery.
-- Redesign settings and session selector using DSH theme tokens, guided connection fields, accessible controls, and responsive layouts.
-- Add transport, integration and React rendering regressions; consolidate current documentation and retain isolated UI previews.
-- Live verification: Exa succeeds; Firecrawl denies this environment anonymous IP access. No plugin installation or publication performed.
+### 全新搜索连接架构
+
+- 用会话级搜索连接取代旧全局模型配置；对话模型与搜索连接独立选择。
+- 内置 Exa、Firecrawl、Tavily、Tinyfish，支持显式免 Key / 个人 API Key 模式；安装为新会话默认选择 Exa。
+- 支持固定搜索模型及跟随会话模型，适配 Anthropic Messages、OpenAI Responses、OpenAI Chat Completions。
+- 会话持久化连接与内容实时性偏好；请求使用冻结快照，fork 复制后独立，多标签页通过 revision 检测冲突。
+- 重写设置页与紧凑搜索选择器，支持表单化自定义连接、深浅色主题和窄屏布局。
+- 凭据通过 DSH Credentials 解析；设置仅保存引用与稀疏差异，自定义端点要求显式信任。
+- 扩充传输、宿主集成、会话隔离和 UI 回归测试；重写 README、配置、迁移、架构与开发文档。
+- 新增 Q 版 DeepSeek 鲸鱼娘搜索主题 Banner，并注明角色与参考作品归属。
+
+### 升级注意
+
+- 旧配置需在设置页显式导入；`configured` 映射至 `custom:legacy`，`current-session` 映射至跟随会话模型。明文 Key 先迁入 Credentials。
+- 不再执行 `fallbackModel` 或自动切换 Key / 服务；移除旧模型请求审计事件及 `/search-config` 快捷命令。
+- 跟随会话模型要求 provider 显式配置 `apiKeyEnv`；不重建 OAuth / 订阅凭据，不透传自定义 headers。
+- Tavily / Tinyfish 未显式设置访问方式时使用免 Key；Tinyfish `research_paper` 需要个人 Key。
+- 实时性是内容缓存年龄偏好，不是发布日期过滤，且仅部分适配器支持。
+- 前后端契约同时更新：升级后重新加载插件或重启宿主，并刷新页面。
+- 主开发线使用 `main`；旧 0.0.x 主线保留于 `legacy/v0.0.x`。
+
+详见[升级指南](docs/migration.zh-CN.md)。
 
 ## [0.0.6] - 2026-09-11
 

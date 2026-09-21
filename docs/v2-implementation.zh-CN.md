@@ -1,77 +1,123 @@
-# V2 验证与交付记录
+# 0.1.0 开发与验证指南
 
-## 当前验证
+本文件保留原路径以避免断链，内容改为可重复的开发、验证与交付方法。架构见[当前架构](design-v2.converged.zh-CN.md)，用户使用见[配置参考](configuration.zh-CN.md)，版本升级见[升级指南](migration.zh-CN.md)。测试存在、测试通过、供应商在线可用、运行实例完成部署是四种不同结论，不能互相替代。
 
-- TypeScript 全项目检查通过。
-- Vitest：18 个文件、239 项测试通过（新增 Tavily/Tinyfish keyless 回归）。
-- 工作区开发依赖已对齐 DSH 0.1.5-rc.2 / Cordis 4.0.2，pnpm peers check 无冲突；没有修改宿主依赖。
-- 实际 React 设置组件经 Chromium 隔离渲染，已检查桌面、深色和 390px 窄屏；窄屏说明挤压问题已修复。图片在 assets/，生成器为 scripts/preview-ui.mjs。
-- 搜索选择器通过 `node scripts/check-selector-ui.mjs --screenshots` 的隔离 Chromium 检查：桌面、390px 窄屏、深色各 14 项交互检查，并通过 CDP 核对展开面板实际尺寸和位置。测试使用模拟 Remote，不接触运行中会话；预览位于 assets/search-picker-*.png。
-- 生产构建通过：服务端 ESM、客户端 CJS 与声明文件均生成；verify-package.mjs 检查通过；lib/index.js 的 Node native import 通过。
-- 本次会话实时性需要服务端和客户端一起重载。没有擅自重启正在运行的 DSH；上述隔离验证不等于完成了运行中实例的服务端更新。
+## 环境与开发入口
 
-### 回归覆盖
+- Node.js：`^22.19.0 || >=24.0.0`；pnpm：按 packageManager 使用 `11.7.0`。
+- DSH：包要求 `>=0.1.5-rc.2`，源码以 rc.2 服务契约为基线。依赖声明与锁文件是构建依据，不修改宿主安装的依赖来让测试通过。
+- 当前开发主线为 `main`，旧版代码线为 `legacy/v0.0.x`。包版本 `0.1.0` 与 settings schema 的 `version: 2` 不同。
 
-| 测试 | 关键覆盖 |
+在仓库根执行：
+
+```sh
+pnpm install --frozen-lockfile
+pnpm run check
+```
+
+`check` 顺序为 typecheck → test → build → verify:package。任一步失败都不应宣称整个检查完成。安装依赖或构建可能写 node_modules / lib；纯文档工作不必重复构建来制造“验证记录”。
+
+## 检查层级
+
+| 命令 | 验证什么 | 不验证什么 |
+| --- | --- | --- |
+| `pnpm run typecheck` | TypeScript 全项目静态契约 | 实际服务挂载或网络行为 |
+| `pnpm run test` | Vitest 自动化回归 | 上游实时可用性 |
+| `pnpm run build` | clean、声明 / TS 输出、服务端 ESM 与客户端 CJS bundle | 宿主已加载新 bundle |
+| `pnpm run verify:package` | 实际 pack 解包，必需产物及 patch 元数据 | npm 发布成功或线上安装成功 |
+| `node scripts/check-selector-ui.mjs` | 隔离 Chromium 中选择器交互和布局 | 运行中 DSH 会话 / Remote 的真实部署 |
+| `node scripts/preview-ui.mjs` | 构建后生成设置组件静态 HTML | 交互、服务端或真实 GUI |
+
+verify-package 会临时打包并检查 `lib/index.js`、`lib/client.js`、`lib/types/index.d.ts`、`cordis.patch.yml`，随后删除临时包与解包目录。它内部优先 pnpm pack，失败才尝试 npm pack，不等于发布 registry。
+
+如果 pnpm 启动器自身异常，先记录实际错误、版本与 PATH；不能把环境故障归因于插件，也不能未经确认修改宿主依赖。需要诊断时可分步执行已安装的工具，但这不再是“一条 pnpm run check 成功”：
+
+```sh
+./node_modules/.bin/tsc -p tsconfig.json --noEmit
+./node_modules/.bin/vitest run
+node scripts/clean.mjs
+./node_modules/.bin/tsc -p tsconfig.build.json
+./node_modules/.bin/tsdown --config tsdown.config.ts
+node scripts/verify-package.mjs
+```
+
+## 回归测试地图
+
+以下描述源文件覆盖方向，不是未经执行的通过报告；测试数量应以本次 runner 输出为准。
+
+| 测试文件 | 关键边界 |
 | --- | --- |
-| tests/mcp.spec.ts（34 项） | 握手、JSON/SSE、ID、多行与分块、超时/取消、响应上限、空结果/坏格式、无重试、脱敏 |
-| tests/keyless-access.spec.ts（12 项） | 显式访问方式、匿名 REST 地址限制、不读取 Key、403 提示、限流不回退、实时性 |
-| tests/v2-host-integration.spec.ts（19 项） | 真实 Cordis/Storage/Session/工具/PTC 服务链、会话实时性隔离、旧 schema 重开、跨字段 CAS、冻结请求、重启、fork、取消、晚挂载和拒绝后重试 |
-| tests/session-selection.spec.ts（7 项） | 一次性默认值补全、会话隔离、连接切换保留实时性、原子保存与分叉 |
-| tests/client-injection.spec.ts（2 项） | 真实 Cordis 缺失注入错误复现、选择器 Remote 注入与生命周期 |
-| tests/selector-render.spec.ts（4 项） | 紧凑菜单、会话实时性、隐藏不可用连接和空分组、不展示配置说明与凭据、错误反馈 |
-| tests/session-model.spec.ts（55 项） | 请求头优先、settings 路由、内置目录补齐、凭据边界、adapter 身份与快照 |
-| tests/settings-render.spec.ts（2 项） | 实际组件 SSR、可访问标签、访问方式、只读态、不触发供应商网络 |
-| 其余配置/客户端/协议/插件测试 | 稀疏写入、revision 冲突、迁移、固定模型和结构化协议、包契约 |
+| [v2-config.spec.ts](../tests/v2-config.spec.ts)、[settings.spec.ts](../tests/settings.spec.ts) | 稀疏合并、ID / endpoint / options 校验、迁移、宿主设置 |
+| [session-selection.spec.ts](../tests/session-selection.spec.ts) | 会话隔离、CAS、持久化失败、一次性 freshness 补齐、fork |
+| [v2-host-integration.spec.ts](../tests/v2-host-integration.spec.ts) | 实际 Cordis/Storage/Session/原生工具/PTC 服务链，模拟网络；冻结、授权、重开、取消、晚挂载与重试 |
+| [session-model.spec.ts](../tests/session-model.spec.ts) | 请求头优先、目录补齐、协议 / 凭据限制、adapter 替换、快照 |
+| [structured.spec.ts](../tests/structured.spec.ts) | 四种 REST 的合成 fixture、实时性映射、正文缺失、传输大小 / 超时 / 脱敏 |
+| [mcp.spec.ts](../tests/mcp.spec.ts) | JSON/SSE、握手、ID、多行与分块、取消 / 超时、无重试、格式和错误 |
+| [keyless-access.spec.ts](../tests/keyless-access.spec.ts) | 显式匿名 / 个人模式、官方地址限制、匿名不读 Key、拒绝不转付费 |
+| [protocols.spec.ts](../tests/protocols.spec.ts)、[provider.spec.ts](../tests/provider.spec.ts) | 三种模型协议、固定 provider 兼容辅助接口 |
+| [plugin.spec.ts](../tests/plugin.spec.ts)、[bundle.spec.ts](../tests/bundle.spec.ts)、[egress.spec.ts](../tests/egress.spec.ts) | 插件导出、bundle / patch 契约、fetchProvider 不受干扰、出站 transport |
+| [v2-client.spec.ts](../tests/v2-client.spec.ts)、[client-settings.spec.ts](../tests/client-settings.spec.ts) | 当前与兼容设置辅助逻辑、稀疏写入、凭据独立操作 |
+| [settings-render.spec.ts](../tests/settings-render.spec.ts)、[selector-render.spec.ts](../tests/selector-render.spec.ts) | SSR 结构、折叠态、紧凑选择器、不可用项与状态 |
+| [client-injection.spec.ts](../tests/client-injection.spec.ts) | Remote 命名空间注入顺序和生命周期 |
 
-## Tavily / Tinyfish keyless 增量验证
+修改某层时至少运行对应测试，并补负向用例。例如新增供应商不能只测成功响应，还需检查访问方式互斥、无付费回退、取消、限流、安全错误和设置冻结。修改 Remote 字段应一起更新服务端 schema、客户端调用与真实宿主测试，不能只让 SSR 通过。
 
-- OpenCode 实现在 **v2 分支**，不是默认 dev。参考已合并 [PR #48561](https://github.com/anomalyco/opencode/pull/48561) 与固定提交 [8aebed170a14d3e3d841883dd2d3d171529d745c 的 Tinyfish 实现](https://github.com/anomalyco/opencode/blob/8aebed170a14d3e3d841883dd2d3d171529d745c/packages/core/src/plugin/websearch/tinyfish.ts#L56-L67)。
-- Tinyfish 免 Key 是 POST https://agent.tinyfish.ai/mcp，头 X-TinyFish-Access-Mode: keyless，直接单次 tools/call 调用 search，无需 initialize。不是取消 REST 的 X-API-Key，也不是借用 OpenCode 密钥或伪装其客户端身份。
-- Tinyfish 匿名 search 一次公开词 Python official documentation 查询返回 HTTP 200、7 条结果；匿名 tools/list 也成功。生产 schema 明确描述匿名工具为受限搜索，query 1–2000 字符、domain_type 仅 web/news。location/language/purpose 可用；通用 MCP 文档中的 research_paper 不属于匿名 schema。
-- Tavily 依据[官方 keyless 文档](https://docs.tavily.com/documentation/keyless.md)，POST /search 加 X-Tavily-Access-Mode: keyless，不发送 Bearer。成功结果与个人 Key 相同格式。
-- 随后直接执行本插件 resolveSettings → ExecutionContexts → executeSearch，对两服务使用公开词 DeepSeek Harness documentation、maxResults=2，凭据 resolver 设置为一旦被调用就抛错。**两者均成功返回 2 条来源**；Tinyfish 本地裁剪并标记 truncated=true，Tavily truncated=false。未修改当前会话的搜索选择。
-- 新增测试覆盖默认可用性、请求头互斥、JSON/SSE、选项/长度限制、取消、HTTP/工具失败脱敏、无重试/付费回退，以及真实宿主中访问方式的请求冻结。
-- 本轮类型检查、239 项测试、生产构建、包检查通过。没有重启、重新安装或宣称运行中 GUI 已更新；启用服务端变更需重载插件后刷新页面。旧 UI 预览来自前轮，不代表新增服务状态截图。
+## 浏览器与 UI 验证
 
-## 先前 Exa / Firecrawl 真实匿名网络验证
+```sh
+node scripts/check-selector-ui.mjs
+# 指定本机 Chromium 可执行文件：
+CHROMIUM=/absolute/path/to/chromium node scripts/check-selector-ui.mjs
+# 仅在明确需要更新仓库预览资产时：
+node scripts/check-selector-ui.mjs --screenshots
 
-只发送公开测试词“DeepSeek Harness documentation”，maxResults=2，不发送任何 Key 或用户私有内容。
+# 先构建，再生成静态设置预览：
+node scripts/preview-ui.mjs
+node scripts/preview-ui.mjs --dark
+```
 
-- **Exa MCP 成功**，返回两条有标题、URL 和片段的来源，包括 DeepSeek Harness GitHub 仓库及官方架构参考页。
-- **Firecrawl MCP**：initialize 和 initialized 成功，tools/call 返回 isError=true，structuredContent.code=KEYLESS_ACCESS_NOT_AVAILABLE。
-- **Firecrawl REST**：HTTP 403；上游说明当前出口 IP 被判为可疑，不允许匿名访问。
-- 未通过代理、换 IP 或伪装请求绕过限制，也未读取/使用个人 API Key。Firecrawl 实现有模拟成功测试，但本环境无法证明真实匿名成功。
+选择器脚本启动隔离 Chromium 和临时 profile，以模拟 Remote 运行组件；不连接或修改已有 DSH 会话。默认检查桌面、390px 窄屏、深色模式。`--screenshots` 会写预览图片，文档任务若未获资产修改范围不应使用。脚本使用本地 headless 浏览器参数，包括 `--no-sandbox`；仅在可信隔离开发环境运行。
 
-Firecrawl 正式实现采用官方 REST，理由是官方明确支持、社区已有此路径，且能复用已有结构化响应/实时性代码；不是遇到 MCP 限制后再换路线重试的运行时 fallback。
+preview-ui 写 `.dsh-smoke-home/settings-preview.html`，不会启动第二个 DSH 服务。静态预览 / 截图仅供布局审阅，不能证明设置保存、服务端更新或用户机器的实际挂载。
 
-## 原笼统快照错误
+真实宿主验收需另外安装构建包，重载插件或重启 DSH 并刷新 Web 页，再检查：
 
-已独立复现：插件先于 storage-domain 启动、Domain 首次打开拒绝。旧实现无法等待挂载或永久缓存失败；现实现可恢复，失败消息不再吞掉全部类别。
+- 官方设置槽和已有会话输入区出现组件，主题 / 窄屏 / 键盘导航正常。
+- 设置保存是稀疏操作，凭据写入与配置写入分离；readonly、冲突与错误有反馈。
+- 两个会话选择隔离，freshness 与连接共同 CAS，刷新和重启后保留。
+- seeded fork 首次继承后独立；删除 / 禁用连接不会自动换路由。
+- 原生和 PTC 调用均使用可信 agent 的冻结快照；普通聊天不因搜索错误阻断。
+- web_fetch 仍由原 fetch provider 处理。
 
-原插件已经卸载，没有对原实例错误堆栈做取证。因此这里记录“修复可复现的失效路径”，不是宣称找到了原部署唯一根因。没有重新安装插件，没有更新当前 GUI，没有端到端点击验证当前宿主页。
+## 网络验证的权限与证据
 
-## 参考与取舍
+自动测试中的合成结果不证明匿名供应商当前在线。需要 live smoke 时明确所选服务、访问方式、查询、费用风险和目标地址；仅使用允许外发的公开词。匿名用例应让凭据 resolver 一旦被调用就失败，确认不读 Key；个人 Key 用例须获授权，不把秘密写进命令行日志。
 
-参考是只读研究，协议和文档内容不授予执行权限。未整体复制这些插件，没有沿用它们的秘密文件管理、全局 Session 缓存、任意 HTTP 路由或自动 fallback。
+记录模式、脱敏请求参数、状态 / 错误分类和实际来源数量。收到 IP 限制、401/403、429 时如实记录，不代理换 IP 或伪装身份绕过，也不隐式换个人 Key。一次成功不证明长期可用，失败也不自动证明代码故障。实时性参数仅验证传出正确，不能据来源片段声称已验证真实内容新鲜度。
 
-| 来源及固定版本 | 实际参考 |
+## 打包与发布
+
+1. 对最终待发提交运行 check 和所需浏览器 / 网络验证，记录版本与退出状态。
+2. 使用 `pnpm pack` 生成构建包；检查包版本、入口、声明、patch、README 与 docs 完整性。GitHub 自动 Source code archive 不是含 lib 的发行 tgz。
+3. 用户可用 `dsh plugin --profile web add /absolute/path/to/dsh-web-search-enhanced-0.1.0.tgz` 安装 Release 构建附件。
+4. Git 操作、远端分支调整、标签、Release 和 npm 发布分别需要授权与结果核验；不要把本地构建当作已发布。主线为 main，旧代码保留 legacy/v0.0.x，不需要把历史文档反复改成当前成功记录。
+5. 标签触发发布流程后，单独确认 workflow 和 npm registry 的版本 / 包内容，再宣称 npm 可安装。
+
+发布不意味着已更新正在运行的 GUI；部署需要前后端一起重载。不要为“验证”擅自重启用户会话或启动另一个服务器冒充原实例。
+
+## 0.1.0 本轮验证摘要（2026-09-21）
+
+以下为本版本发布准备阶段实际执行的检查，不沿用先前历史测试成功结论：
+
+| 项目 | 本轮结果 / 范围 |
 | --- | --- |
-| [liustack/modsearch](https://github.com/liustack/modsearch/tree/22acb7a08cc7d11dce036ddd3ef68bfe20ef4983) | src/providers/firecrawl.ts 的无 Authorization REST 路径、限额说明 |
-| [240xu/dsh-websearch](https://github.com/240xu/dsh-websearch/tree/113cc7a8a82297210886c30b6616bdb197e6e4f1) | lib/util/mcp-client.js 握手，以及 lib/backends/exa.js 文本格式；不采用全局缓存和原始错误透传 |
-| [dsh-market/dsh-market](https://github.com/dsh-market/dsh-market/tree/a6ad5f6e78dfe5cec61738c67f9c0567f2fd22c7) | src/client/Market.module.css 设置行/卡片、--dsw-alias-* 主题令牌与响应式模式 |
-| [ysr666/dsh-vision-router](https://github.com/ysr666/dsh-vision-router/tree/73f73a436a36c32a9e583647410bc62e5e9e239b) | 前一轮已有的公开插件审计快照，用于 Session/provider 绑定边界交叉检查；不据此宣称订阅搜索支持 |
+| 环境 | Node v26.9.0、pnpm 11.7.0、DSH 依赖 rc.2 |
+| `pnpm install --frozen-lockfile && pnpm run check` | 退出 0；类型检查、18 个文件 / 239 项 Vitest 测试、构建、包契约检查通过 |
+| `node scripts/check-selector-ui.mjs` | 退出 0；desktop、narrow（390px）、dark 各 14 项，共 42 项隔离 Chromium 检查通过 |
+| 服务端入口 | `lib/index.js` 原生 Node import 通过 |
+| 配置示例 | 配置指南 5 段 YAML 通过解析与构建版 `resolveSettings` 校验 |
+| 供应商实时网络可用性 | 上述检查不提供此证明 |
+| 运行中 GUI 安装 / 服务端重载 | 上述检查不提供此证明 |
+| GitHub Release / npm 发布 | 须另核对实际发布结果，不从本地检查推导 |
 
-官方证据：
-
-- [Exa MCP](https://exa.ai/docs/get-started/exa-mcp.md)：官方匿名 MCP、web_search_exa 与限额。
-- [Firecrawl keyless MCP](https://docs.firecrawl.dev/mcp-server/keyless.md)：匿名 MCP 工具范围。
-- [Firecrawl rate limits](https://docs.firecrawl.dev/rate-limits.md)：REST/SDK/CLI 的 keyless 支持，按 IP 的每日请求/积分限制，超限 429。
-
-本机宿主契约另核验 dsh-agent 的 runtime-types.d.ts 与 dsh-agent-loop 的真实 agent/request 分派、dsh-storage-domain 的作用域服务，以及客户端槽位/SettingsScope 声明。
-
-## 整理策略
-
-README 提供使用说明，本架构文档描述当前实现，本记录只保存证据和限制。移除旧 V1 设计、已完成的 Astra 重构交接提示；历史仍在 Git 中。临时参考克隆和隔离 Chromium 数据可删除；保留正常 node_modules、包管理器和宿主相关配置缓存，不随意删除用户文件。
-
-工作分支保持 refactor/search-connections-v2；main、baseline/search-connections-v2 与准备检查点不改动。构建版本仍 0.0.6，无 push、npm publish 或宿主安装操作。
+后续代码或依赖变更应重新运行适当检查，不把此摘要视为永久保证。提交问题时附版本、命令、退出状态及最小脱敏复现；不要上传 Key、私有查询、完整凭据文件或含秘密的上游响应。
