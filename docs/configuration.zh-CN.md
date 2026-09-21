@@ -1,6 +1,6 @@
-# 0.1.1 配置参考
+# 0.1.2 配置参考
 
-本指南面向安装版插件。包版本为 **0.1.1**，配置格式的 `version` 为 **2**；两者不是同一版本号。快速开始见 [README](../README.md)，旧版用户先读[升级指南](migration.zh-CN.md)。
+本指南面向安装版插件。包版本为 **0.1.2**，配置格式的 `version` 为 **2**；两者不是同一版本号。快速开始见 [README](../README.md)，旧版用户先读[升级指南](migration.zh-CN.md)。
 
 ## 配置入口与作用范围
 
@@ -200,7 +200,7 @@ web-search-enhanced:
 | `WEB_PROVIDER_ACCESS_ERROR` | 上游访问 / 计费限制（如 HTTP 402），检查账户 |
 | `WEB_PROVIDER_RATE_LIMITED` | HTTP 429 等限流；等待并检查额度，不自动重试或转付费 |
 | `WEB_SEARCH_FOLLOW_UNSUPPORTED` | 检查 provider 协议、地址、显式 apiKeyEnv、模型能力；必要时用固定连接 |
-| `WEB_SEARCH_MIGRATION_REQUIRED` | 按升级指南显式导入旧配置 |
+| `WEB_SEARCH_MIGRATION_REQUIRED` | 自动迁移未完成；检查宿主日志、旧配置与 DSH Credentials 权限后重启插件 |
 | `WEB_SEARCH_CONFIG_INVALID` | 检查未知字段、options、信任确认及引用格式；禁用连接也必须配置合法 |
 | `WEB_SEARCH_STORAGE_UNAVAILABLE` | 检查 DSH storage-domain 及持久后端；恢复后下一请求会重试 |
 | `WEB_SEARCH_CONTEXT_UNAVAILABLE` | 缺少真实请求执行上下文；发起新的模型请求，不在工具参数伪造 Session |

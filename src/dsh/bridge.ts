@@ -180,7 +180,7 @@ export function installBridge(ctx: Context, settings: () => ResolvedSettings, op
         // startup/storage/migration fault behind the same unhelpful message.
         const code = (error as { code?: string })?.code
         const category = code === 'WEB_SEARCH_STORAGE_UNAVAILABLE' ? code : code === 'WEB_SEARCH_MIGRATION_REQUIRED' ? code : 'WEB_SEARCH_CONFIG_INVALID'
-        const message = category === 'WEB_SEARCH_STORAGE_UNAVAILABLE' ? '搜索存储暂不可用：请检查 DSH storage-domain 及持久后端；下一次请求会重试' : category === 'WEB_SEARCH_MIGRATION_REQUIRED' ? '检测到旧版搜索配置：请在设置 → 搜索连接中导入旧配置' : '搜索配置无法解析：请在设置 → 搜索连接中检查配置'
+        const message = category === 'WEB_SEARCH_STORAGE_UNAVAILABLE' ? '搜索存储暂不可用：请检查 DSH storage-domain 及持久后端；下一次请求会重试' : category === 'WEB_SEARCH_MIGRATION_REQUIRED' ? '旧版搜索配置自动迁移尚未完成：请检查宿主日志、配置及 Credentials 权限后重启插件' : '搜索配置无法解析：请在设置 → 搜索连接中检查配置'
         contexts.capture(payload.agent, payload.agent.session.id, payload.turn, payload.step, { connectionId: null, revision: 0 }, { freshness: 'auto', connections: {} }, message, category)
       }
     }

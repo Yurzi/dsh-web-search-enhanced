@@ -35,4 +35,57 @@ describe('DSH-styled settings rendering', () => {
     expect(v2CardCss).toMatch(/\.v2s-card\s*\{[^}]*\}/)
     expect(v2CardCss).toContain('--dsw-alias-border-l2')
   })
+
+  it('renders connection row groups for inline expansion and includes inline key styles', () => {
+    const describe = vi.fn()
+    const scope = { subscribe: () => () => {}, getSnapshot: () => ({ status: 'ready', writable: true, revision: 1, value: { version: 2, defaultConnection: 'builtin:exa' } }) }
+    const html = renderToStaticMarkup(createElement(V2Settings, { scope, credentials: { describe }, defaultOpen: true } as unknown as V2SettingsProps))
+
+    expect(html).toContain('class="v2s-row-group')
+    expect(html).toContain('aria-expanded="false"')
+    expect(v2CardCss).toContain('.v2s-row-group')
+    expect(v2CardCss).toContain('.v2s-row-open')
+    expect(v2CardCss).toContain('.v2s-inline-key-panel')
+    expect(v2CardCss).toContain('.v2s-inline-key-input-row')
+  })
+
+  it('renders OpenAlex polite mailto button and configuration status', () => {
+    const describe = vi.fn()
+    const scope = {
+      subscribe: () => () => {},
+      getSnapshot: () => ({
+        status: 'ready',
+        writable: true,
+        revision: 1,
+        value: {
+          version: 2,
+          connections: {
+            'builtin:openalex': { options: { mailto: 'user@example.edu' } },
+          },
+        },
+      }),
+    }
+    const html = renderToStaticMarkup(createElement(V2Settings, { scope, credentials: { describe }, defaultOpen: true } as unknown as V2SettingsProps))
+    expect(html).toContain('礼貌邮箱')
+    expect(html).toContain('user@example.edu')
+    expect(html).toContain('管理邮箱')
+  })
+  it('renders custom connection editing controls without duplicating shared credential references', () => {
+    const describe = vi.fn()
+    const scope = {
+      subscribe: () => () => {},
+      getSnapshot: () => ({
+        status: 'ready', writable: true, revision: 1,
+        value: { version: 2, connections: {
+          'custom:one': { label: 'One', kind: 'structured', adapter: 'exa', credentialRef: 'SHARED_KEY' },
+          'custom:two': { label: 'Two', kind: 'structured', adapter: 'exa', credentialRef: 'SHARED_KEY' },
+        } },
+      }),
+    }
+    const html = renderToStaticMarkup(createElement(V2Settings, { scope, credentials: { describe }, defaultOpen: true } as unknown as V2SettingsProps))
+    expect(html.match(/凭据引用: <code>SHARED_KEY<\/code>/g)).toHaveLength(2)
+    expect(html.match(/管理 Key/g)).toHaveLength(2)
+    expect(html).toContain('aria-expanded="false"')
+    expect(html).toContain('编辑')
+  })
 })

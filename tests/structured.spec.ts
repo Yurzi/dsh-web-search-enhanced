@@ -196,7 +196,8 @@ describe('structured search API contracts (official-doc-shaped synthetic fixture
       const init = fetcher.mock.calls[0]![1]!
       expect(init.method).toBe('GET')
       expect(init.body).toBeUndefined()
-      expect(new Headers(init.headers).get('authorization')).toBe('Bearer ' + context.apiKey)
+      expect(new Headers(init.headers).has('authorization')).toBe(false)
+      expect(new URL(String(fetcher.mock.calls[0]![0])).searchParams.get('api_key')).toBe(context.apiKey)
     })
 
     it('OpenAlex supports anonymous keyless access', async () => {
@@ -205,6 +206,7 @@ describe('structured search API contracts (official-doc-shaped synthetic fixture
       expect(result.sources[0]?.url).toBe('https://openalex.org/W1')
       const init = fetcher.mock.calls[0]![1]!
       expect(new Headers(init.headers).has('authorization')).toBe(false)
+      expect(new URL(String(fetcher.mock.calls[0]![0])).searchParams.get('api_key')).toBeNull()
     })
 
     it('Semantic Scholar executes GET with fields, query, x-api-key, and parses TL;DR and citations', async () => {

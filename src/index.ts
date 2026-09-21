@@ -5,7 +5,8 @@ import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-settings'
 import z from '@deepseek-ai/schemastery'
 import { parseDocument } from 'yaml'
-import { resolveSettings, importLegacy, type V2Config } from './config.ts'
+import { resolveSettings, type V2Config } from './config.ts'
+import { importLegacy, needsMigration } from './migration.ts'
 import { installBridge } from './dsh/bridge.ts'
 import { searchError } from './search/service.ts'
 export const name = 'web-search-enhanced'
@@ -31,60 +32,55 @@ export function apply(ctx: Context, config: Config = {}): void {
     settingsCtx.settings.installSection(ctx, SETTINGS_NAMESPACE, Config, config, {
       setSource(source) { current = source }, onChange() {}, validate: validateSettings,
     })
-    // Auto-detect and migrate legacy v1 user configuration on startup / upgrade
+    // Auto-detect and migrate every supported legacy v1 field on startup / upgrade.
     const descriptor = settingsCtx.settings.describe().find(d => d.ns === SETTINGS_NAMESPACE)
     const user = descriptor?.user as Record<string, unknown> | undefined
-    if (user && user.version !== 2 && ['modelMode', 'protocol', 'baseURL', 'model', 'apiKeyEnv'].some(k => user[k] !== undefined)) {
-      try {
+    if (user && needsMigration(user)) {
+      void (async () => {
         const raw = { ...user }
+        const secret = raw.apiKey
+        delete raw.apiKey
+        const migrated = importLegacy(raw)
+        validateSettings(migrated) // Validate before writing any credential.
+        raw.apiKey = secret
+        if (secret && !ctx.get('credentials')) throw new Error('Credentials unavailable')
         if (typeof raw.apiKey === 'string' && raw.apiKey.trim() && ctx.get('credentials')) {
           const targetRef = (typeof raw.apiKeyEnv === 'string' && raw.apiKeyEnv.trim()) || 'WEB_SEARCH_ENHANCED_API'
-          void ctx.credentials.set(credentialRef(targetRef), raw.apiKey.trim()).catch(() => {})
+          await ctx.credentials.set(credentialRef(targetRef), raw.apiKey.trim())
           delete raw.apiKey
         }
-        const migrated = importLegacy(raw)
-        void settingsCtx.settings.replace(SETTINGS_NAMESPACE as never, migrated).catch(() => {})
-      } catch {
-        // Fall back gracefully to manual import in settings UI
-      }
+        await settingsCtx.settings.replace(SETTINGS_NAMESPACE as never, migrated)
+      })().catch(() => {
+        console.warn('[web-search-enhanced] 自动迁移失败；旧配置已保留。请检查 Credentials 写权限与配置后重启插件。')
+      })
     }
 
-    // Auto-correct flow-style inline JSON formatting in settings.yaml if present
+    // Preserve the existing automatic YAML flow-style normalization.
     const docPath = (settingsCtx.settings as unknown as { documentPath?: string })?.documentPath
     if (typeof docPath === 'string' && existsSync(docPath)) {
       try {
-        const text = readFileSync(docPath, 'utf8')
-        const doc = parseDocument(text)
+        const doc = parseDocument(readFileSync(docPath, 'utf8'))
         const node = doc.get(SETTINGS_NAMESPACE, true) as { flow?: boolean; items?: unknown[] } | undefined
-        if (node && node.flow) {
-          const toBlock = (n: unknown): void => {
-            if (!n || typeof n !== 'object') return
-            const m = n as { flow?: boolean; items?: unknown[] }
-            if (Array.isArray(m.items)) {
-              if (m.items.length === 0) m.flow = true
-              else {
-                m.flow = false
-                for (const item of m.items) {
-                  const pair = item as { key?: unknown; value?: unknown }
-                  if (pair && typeof pair === 'object' && ('key' in pair || 'value' in pair)) {
-                    toBlock(pair.key); toBlock(pair.value)
-                  } else toBlock(item)
-                }
-              }
-            }
+        const toBlock = (value: unknown): void => {
+          if (!value || typeof value !== 'object') return
+          const n = value as { flow?: boolean; items?: unknown[] }
+          if (!Array.isArray(n.items)) return
+          n.flow = n.items.length === 0
+          if (!n.flow) for (const item of n.items) {
+            const pair = item as { key?: unknown; value?: unknown }
+            if ('key' in pair || 'value' in pair) { toBlock(pair.key); toBlock(pair.value) } else toBlock(item)
           }
-          toBlock(node)
-          writeFileSync(docPath, doc.toString(), 'utf8')
         }
+        if (node?.flow) { toBlock(node); writeFileSync(docPath, doc.toString(), 'utf8') }
       } catch {
-        // Non-fatal: ignored under locked or read-only filesystems
+        // Non-fatal for locked or read-only settings files.
       }
     }
   })
   installBridge(ctx, () => {
     const value = current()
     // Old global routes must be imported deliberately rather than silently defaulted.
-    if (value.version !== 2 && ['modelMode', 'protocol', 'baseURL', 'model', 'apiKeyEnv'].some(k => (value as Record<string, unknown>)[k] !== undefined)) throw searchError('请在搜索连接设置中导入旧版配置', 'WEB_SEARCH_MIGRATION_REQUIRED')
+    if (needsMigration(value)) throw searchError('旧配置自动迁移尚未完成；请检查宿主日志、配置及 Credentials 权限后重启插件', 'WEB_SEARCH_MIGRATION_REQUIRED')
     return resolveSettings(value)
   })
 }

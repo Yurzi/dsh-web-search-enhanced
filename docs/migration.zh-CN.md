@@ -30,51 +30,30 @@ dsh plugin --profile web add dsh-web-search-enhanced@0.1.0
 
 升级含服务端与客户端契约变更。重新加载插件或重启 DSH，**然后刷新 Web 页面**；只刷新浏览器不足以更新服务端。此操作可能影响运行中任务，应在合适时机进行。
 
-## 3. 显式导入旧配置与自动迁移脚本
+## 3. 启动时自动迁移旧配置
 
-针对老用户的历史配置，插件提供两种迁移方式：**Web 设置页导入**与**命令行自动迁移脚本**。
+插件现在只保留启动时自动迁移，不再提供命令行迁移脚本或设置页手动导入入口。检测到旧版配置后，插件会在设置注册阶段尝试迁移；迁移成功后写入 V2 连接结构，搜索请求仍会对未完成迁移的配置 fail-closed，并提示检查设置。
 
-### 方式一：命令行自动迁移脚本（推荐）
+自动迁移覆盖以下旧字段：
 
-针对已有部署或自动化环境，插件提供了针对老用户的自动迁移脚本。该脚本会自动检测 DSH `settings.yaml`，备份原文件，将遗留的 JSON / flow-style 格式转换为标准 DSH YAML 块级缩进格式，并完成 v1 到 v2 模型的无缝迁移：
+- 固定路由字段：`modelMode`、`protocol`、`baseURL`、`model`、`apiKeyEnv`；
+- 旧模型与搜索选项：`fallbackModel`、`apiVersion`、`toolIdentifier`、`maxTokens`、`maxUses`、`chatSearchMode`、`searchContextSize`；
+- 明文 `apiKey` 会先尝试写入 DSH Credentials，随后从配置迁移数据中剥离。
 
-```sh
-# 预览迁移效果（不修改文件）
-node scripts/migrate-config.mjs --dry-run
+迁移规则：
 
-# 执行自动迁移（自动备份原文件为 .bak）
-pnpm run migrate
-# 或
-node scripts/migrate-config.mjs
-```
-
-脚本特性：
-- **安全备份**：在对配置文件做任何修改前，自动创建 `.bak` 备份文件。
-- **YAML 格式规范化**：自动修复此前设置页或外部写入产生的 JSON 行内花括号 (`flow-style`)，统一输出为符合 DSH 原生规范的标准块级 YAML。
-- **旧版路由迁移**：自动将旧版 `modelMode: configured` 转换为 `custom:legacy`，或将 `modelMode: current-session` 转换为 `builtin:session-model`。
-- **凭据安全保护**：若旧配置存在明文 `apiKey`，脚本会明确告警并将其从公开配置中剥离，提示移入 DSH Credentials。
-
-### 方式二：Web 界面显式导入
-
-打开设置 → 插件 → Web Search Enhanced。检测到旧 `modelMode/protocol/baseURL/model/apiKeyEnv` 且未标记 version 2 时，显示导入入口。搜索返回 `WEB_SEARCH_MIGRATION_REQUIRED` 是保护措施，不会静默选新默认替代旧路由。
-
-导入前核对 endpoint 与凭据归属，点击“导入旧配置（不迁移或删除 Key）”：
-
-| 旧配置 | 0.1.0 结果 |
+| 旧配置 | V2 结果 |
 | --- | --- |
-| `modelMode: configured` 或固定配置 | 新增 `custom:legacy` 固定模型，设为新会话默认 |
+| `modelMode: configured` 或固定配置 | 新增 `custom:legacy` 固定模型连接并设为默认 |
 | `modelMode: current-session` | 新会话默认设为 `builtin:session-model` |
-| `protocol/model/baseURL/apiKeyEnv` | 转为固定连接 binding 的 `protocol/model/baseURL/credentialRef` |
-| 模型高级选项 | 固定模式导入到 options；跟随模式按需重新配置 optionsByProtocol |
-| `fallbackModel` | 不执行，不变成备用连接 |
-| 非空 `apiKey` | 拒绝导入，须先移入 Credentials |
-| 已有 `custom:legacy` | 固定模式拒绝覆盖；先重命名已有连接或手动选择其他 ID |
+| `protocol/model/baseURL/apiKeyEnv` | 转为固定连接 binding 的对应字段 |
+| 模型高级选项 | 固定模式导入到连接 `options` |
+| `fallbackModel` | 不执行，不转换为备用连接 |
+| 非空 `apiKey` | 仅在 Credentials 写入成功后继续迁移；失败则保持 fail-closed |
 
-固定模式缺省值沿用旧导入器约定：`anthropic-messages`、`deepseek-flash`、`https://api.deepseek.com/anthropic/v1`、`WEB_SEARCH_ENHANCED_API`。它们不是新的自动 fallback；必须确认目标真实支持搜索。导入器将旧地址标为 trustedEndpoint，因此点击前应检查目标，不能把导入当作安全认证。
+自动迁移不会覆盖已有会话的搜索选择，也不会自动切换新连接。迁移完成后请重新加载插件或重启 DSH，再刷新 Web 页面；已有会话如需使用迁移后的连接，应在会话搜索选择器中显式选择。
 
-UI 以 Settings revision 写入转换结果，并清理用户层的旧路由字段；继承层原配置可能仍保留。导入函数本身只生成对象，不写配置或读取秘密。不要手工仅补 `version: 2` 来“消除错误”，那不会转换旧路由。
-
-**导入只改新会话默认，不覆盖已有会话选择。** 导入后请在已有会话里显式选 `custom:legacy` 或跟随会话模型；新建会话检查默认是否符合预期。多窗口编辑冲突时刷新后重试。
+如果迁移失败，请先将明文 Key 移入 DSH Credentials，并检查旧配置中的 endpoint、模型协议和 credential 引用。插件不会提供独立迁移命令，也不会创建配置文件备份；进行升级前请由宿主或部署系统负责备份 `settings.yaml`。
 
 ## 4. 从重构预览版升级
 

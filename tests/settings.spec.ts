@@ -34,15 +34,10 @@ describe('V2 sparse settings integration',()=>{
   await expect(ctx.settings.update(ns,{apiKey:'fixture-not-real'})).rejects.toThrow('DSH Credentials')
   await pluginFiber.dispose();await expect(ctx.web.search({query:'q'})).rejects.toMatchObject({code:'WEB_PROVIDER_CONFIGURED_MISSING'});await ctx.fiber.dispose()
  })
- it('automatically detects and migrates legacy v1 settings on startup', async () => {
+ it.each([{ modelMode: 'configured', model: 'deepseek-flash', apiKeyEnv: 'MY_SEARCH_KEY', maxTokens: 2048 }, { maxTokens: 2048 }, { fallbackModel: 'obsolete' }, { searchContextSize: 'high' }])('automatically migrates legacy settings %j', async legacy => {
   class InitialLegacySettings extends SettingsProvider {
    doc = {
-    [plugin.SETTINGS_NAMESPACE]: {
-     modelMode: 'configured',
-     model: 'deepseek-flash',
-     apiKeyEnv: 'MY_SEARCH_KEY',
-     maxTokens: 2048,
-    }
+    [plugin.SETTINGS_NAMESPACE]: legacy
    }
    get writable() { return true }
    protected load() { return Promise.resolve(structuredClone(this.doc)) }

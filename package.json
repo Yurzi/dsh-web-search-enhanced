@@ -1,6 +1,6 @@
 {
   "name": "dsh-web-search-enhanced",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Session-scoped search connections for DeepSeek Harness",
   "license": "MIT",
   "type": "module",
@@ -30,7 +30,6 @@
     "lib/types/**/*.d.ts",
     "cordis.patch.yml",
     "docs",
-    "scripts/migrate-config.mjs",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"
@@ -69,7 +68,6 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "preview:ui": "node scripts/preview-ui.mjs",
-    "migrate": "node scripts/migrate-config.mjs",
     "build": "pnpm run clean && tsc -p tsconfig.build.json && tsdown --config tsdown.config.ts",
     "check": "pnpm run typecheck && pnpm run test && pnpm run build && pnpm run verify:package",
     "verify:package": "node scripts/verify-package.mjs",

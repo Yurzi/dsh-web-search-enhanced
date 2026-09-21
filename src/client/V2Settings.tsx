@@ -6,10 +6,9 @@ import type { V2Config } from '../config.ts'
 import type { CredentialRemote } from './SearchSettingsCard.tsx'
 import { CATALOG, SESSION_MODEL_ID, SESSION_MODEL_LABEL } from '../catalog.ts'
 import { freshnessLabels } from './SearchConnectionSelector.tsx'
-import { importLegacy } from '../migration.ts'
 import { v2CardCss } from './v2-settings.css.ts'
 
-export interface V2SettingsProps { scope: SettingsScope<V2Config>; credentials: CredentialRemote }
+export interface V2SettingsProps { scope: SettingsScope<V2Config>; credentials: CredentialRemote; defaultOpen?: boolean }
 const object = (v: unknown): Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {}
 const equal = (a: unknown, b: unknown): boolean => {
   if (Object.is(a, b)) return true
@@ -71,15 +70,21 @@ const template = (kind: 'model' | 'structured') => YAML.stringify(kind === 'mode
   label: '专用搜索模型', kind, binding: { mode: 'fixed', protocol: 'openai-responses', model: 'search-capable-model', baseURL: 'https://gateway.example/v1', credentialRef: 'SEARCH_MODEL_API_KEY' }, options: {},
 } : { label: 'Exa 独立账号', kind, adapter: 'exa', endpoint: CATALOG['builtin:exa'].endpoint, credentialRef: 'EXA_WORK_API_KEY', options: {} })
 
-export function V2Settings({ scope, credentials }: V2SettingsProps) {
+export function V2Settings({ scope, credentials, defaultOpen = false }: V2SettingsProps) {
   const snapshot = useSyncExternalStore(scope.subscribe.bind(scope), scope.getSnapshot.bind(scope), scope.getSnapshot.bind(scope))
   const config = snapshot.value ?? {}
-  const [open, setOpen] = useState(false)
-  const [editor, setEditor] = useState<{ type: 'key'; ref: string } | { type: 'connection'; id: string; initial: SparseSnapshot; revision: number; existing: boolean } | null>(null)
+  const [open, setOpen] = useState(defaultOpen)
+  const [editor, setEditor] = useState<
+    | { type: 'key'; connectionId: string; ref: string }
+    | { type: 'mailto'; connectionId: string; label: string }
+    | { type: 'connection'; id: string; initial: SparseSnapshot; revision: number; existing: boolean }
+    | null
+  >(null)
   const [yamlText, setYamlText] = useState('')
   const [connectionId, setConnectionId] = useState('custom:')
   const [consent, setConsent] = useState(false)
   const [keyValue, setKeyValue] = useState('')
+  const [mailtoValue, setMailtoValue] = useState('')
   const [states, setStates] = useState<Record<string, { configured: boolean; writable?: boolean }>>({})
   const [refresh, setRefresh] = useState(0)
   const [busy, setBusy] = useState(false)
@@ -115,7 +120,7 @@ export function V2Settings({ scope, credentials }: V2SettingsProps) {
   }, [credentials, refsKey, refresh])
 
   const disabled = busy || snapshot.status !== 'ready' || !snapshot.writable || snapshot.revision === undefined
-  const close = () => { setEditor(null); setKeyValue(''); setConsent(false) }
+  const close = () => { setEditor(null); setKeyValue(''); setMailtoValue(''); setConsent(false) }
   const act = async (work: () => Promise<void>, message: string) => {
     if (busy) return
     setBusy(true); setError(''); setNotice('')
@@ -129,17 +134,117 @@ export function V2Settings({ scope, credentials }: V2SettingsProps) {
   }
   const openConnection = (kind: 'model' | 'structured', id?: string) => {
     if (snapshot.revision === undefined) return
+    if (editor?.type === 'connection' && editor.existing && editor.id === id) { close(); return }
     setOpen(true)
     setEditor({ type: 'connection', id: id ?? '', existing: !!id, initial: { base: snapshot.base, user: snapshot.user }, revision: snapshot.revision })
     setConnectionId(id ?? 'custom:'); setYamlText(id ? YAML.stringify(config.connections?.[id] ?? {}) : template(kind)); setConsent(false); setKeyValue(''); setError('')
   }
-  const openKey = (ref: string) => {
+  const openKey = (connectionId: string, ref: string) => {
+    if (editor?.type === 'key' && editor.connectionId === connectionId) { close(); return }
     setOpen(true)
-    setEditor({ type: 'key', ref }); setKeyValue(''); setConsent(false); setError('')
+    setEditor({ type: 'key', connectionId, ref }); setKeyValue(''); setConsent(false); setError('')
+  }
+  const openMailto = (connectionId: string, label: string) => {
+    setOpen(true)
+    if (editor?.type === 'mailto' && editor.connectionId === connectionId) { close(); return }
+    setKeyValue(''); setConsent(false)
+    const current = String(object(config.connections?.[connectionId]?.options).mailto ?? '')
+    setMailtoValue(current)
+    setEditor({ type: 'mailto', connectionId, label })
+    setError('')
   }
   const labels = new Map<string, string>([[SESSION_MODEL_ID, SESSION_MODEL_LABEL], ...Object.entries(CATALOG).map(([id, c]): [string, string] => [id, c.label]), ...custom.map(([id, c]): [string, string] => [id, String(c.label ?? id)])])
 
   if (snapshot.status === 'unavailable') return null
+
+  const renderKeyEditor = (id: string, ref: string) => (editor?.type === 'key' && editor.connectionId === id ? (
+                    <div className="v2s-inline-key-panel" role="region" aria-label={'凭据配置：' + ref}>
+                      <div className="v2s-inline-key-head"><strong className="v2s-inline-key-title"><span className="v2s-inline-key-icon">🔐</span>配置凭据 <code>{ref}</code></strong><span className="v2s-inline-key-sub">仅保存到 DSH Credentials</span></div>
+                      <div className="v2s-inline-key-input-row">
+                        <input className="v2s-input v2s-inline-key-input" aria-label={'API Key：' + ref} type="password" autoComplete="new-password" placeholder="输入新的 API Key…" value={keyValue} disabled={states[ref]?.writable === false || busy} onChange={e => setKeyValue(e.target.value)} />
+                        <div className="v2s-inline-key-actions"><button type="button" className="v2s-btn" disabled={busy} onClick={close}>取消</button><button type="button" className="v2s-btn v2s-btn-primary" disabled={!keyValue.trim() || states[ref]?.writable === false || busy} onClick={() => { const secret = keyValue; void act(async () => { await saveV2Credential(credentials, ref, secret); if (alive.current) { setKeyValue(''); setRefresh(n => n + 1) } }, '凭据已保存；连接选择未改变。') }}>保存 Key</button></div>
+                      </div>
+                      {states[ref]?.writable === false ? <p className="v2s-hint v2s-status-error">此凭据来源只读，请通过宿主凭据配置管理。</p> : null}
+                    </div>
+                  ) : null)
+  const connectionPanel = (editor?.type === 'connection' ? (
+            <div className="v2s-editor-panel" role="region" aria-label={editor.existing ? ('编辑连接：' + editor.id) : '添加自定义连接'}>
+              <div className="v2s-editor-head">
+                <h4 className="v2s-editor-title">{editor.existing ? ('编辑连接：' + editor.id) : '添加自定义连接'}</h4>
+                <button type="button" className="v2s-btn" disabled={busy} onClick={close}>✕ 取消</button>
+              </div>
+              <div className="v2s-field">
+                <label className="v2s-label" htmlFor={bodyId + '-conn-id'}>连接 ID</label>
+                <input
+                  id={bodyId + '-conn-id'}
+                  className="v2s-input"
+                  value={connectionId}
+                  disabled={editor.existing}
+                  onChange={e => setConnectionId(e.target.value)}
+                  placeholder="custom:my-search"
+                />
+                <p className="v2s-hint">必须是 custom: 开头的字母、数字、点、下划线或连字符</p>
+              </div>
+              <div className="v2s-grid">
+                <label className="v2s-field"><span className="v2s-label">连接名称</span><input className="v2s-input" value={String(draft.label ?? '')} onChange={e => patchDraft(['label'], e.target.value)} /></label>
+                {draft.kind === 'model' ? <>
+                  <label className="v2s-field"><span className="v2s-label">搜索协议</span><select className="v2s-select" value={String(object(draft.binding).protocol ?? '')} onChange={e => patchDraft(['binding','protocol'], e.target.value)}><option value="openai-responses">OpenAI Responses</option><option value="anthropic-messages">Anthropic Messages</option><option value="openai-chat-completions">OpenAI Chat Completions</option></select></label>
+                  <label className="v2s-field"><span className="v2s-label">模型 ID</span><input className="v2s-input" value={String(object(draft.binding).model ?? '')} onChange={e => patchDraft(['binding','model'], e.target.value)} /></label>
+                </> : <label className="v2s-field"><span className="v2s-label">搜索服务</span><select className="v2s-select" value={String(draft.adapter ?? '')} onChange={e => patchDraft(['adapter'], e.target.value)}>{Object.values(CATALOG).map(c => <option key={c.adapter} value={c.adapter}>{c.label}</option>)}</select></label>}
+                <label className="v2s-field"><span className="v2s-label">服务地址（HTTP API）</span><input className="v2s-input" type="url" value={String(draft.kind === 'model' ? object(draft.binding).baseURL ?? '' : draft.endpoint ?? '')} onChange={e => patchDraft(draft.kind === 'model' ? ['binding','baseURL'] : ['endpoint'], e.target.value)} /></label>
+                <label className="v2s-field"><span className="v2s-label">凭据引用（不是 Key 本身）</span><input className="v2s-input" autoComplete="off" value={String(draft.kind === 'model' ? object(draft.binding).credentialRef ?? '' : draft.credentialRef ?? '')} onChange={e => patchDraft(draft.kind === 'model' ? ['binding','credentialRef'] : ['credentialRef'], e.target.value)} /></label>
+                {draft.adapter === 'openalex' ? (
+                  <label className="v2s-field">
+                    <span className="v2s-label">礼貌邮箱（mailto，用于加入礼貌池）</span>
+                    <input
+                      className="v2s-input"
+                      type="email"
+                      placeholder="例如: your-name@institution.edu"
+                      value={String(object(draft.options).mailto ?? '')}
+                      onChange={e => patchDraft(['options', 'mailto'], e.target.value)}
+                    />
+                  </label>
+                ) : null}
+              </div>
+              <details className="v2s-field"><summary className="v2s-label">高级：YAML 与协议选项</summary>
+                <label className="v2s-label" htmlFor={bodyId + '-conn-yaml'}>连接配置 YAML（禁止明文 Key）</label>
+                <textarea
+                  id={bodyId + '-conn-yaml'}
+                  className="v2s-textarea"
+                  rows={14}
+                  spellCheck={false}
+                  value={yamlText}
+                  onChange={e => { setYamlText(e.target.value); setConsent(false) }}
+                />
+              </details>
+              <label className="v2s-checkbox-label">
+                <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} />
+                <span>我确认信任此 endpoint / baseURL，并授权向该地址发送此 credentialRef 对应凭据。</span>
+              </label>
+              {editor.revision !== snapshot.revision ? (
+                <p className="v2s-status-text v2s-status-error" role="alert">设置版本已变化。请放弃并重新打开编辑器，以免覆盖其他窗口的修改。</p>
+              ) : null}
+              <div className="v2s-editor-foot">
+                <button type="button" className="v2s-btn" disabled={busy} onClick={close}>放弃编辑</button>
+                <button
+                  type="button"
+                  className="v2s-btn v2s-btn-primary"
+                  disabled={!consent || disabled}
+                  onClick={() => {
+                    void act(async () => {
+                      const id = connectionId.trim()
+                      if (!editor.existing && (labels.has(id) || Object.hasOwn(config.connections ?? {}, id))) throw new Error('此连接 ID 已存在，请使用新的 ID。')
+                      const connection = parseConnectionDraft(id, yamlText, consent)
+                      await mutate(sparseSettingOperations(editor.initial, ['connections', id], connection), editor.revision)
+                    }, '连接已保存；请单独配置凭据并在会话中选择。')
+                  }}
+                >
+                  保存连接
+                </button>
+              </div>
+            </div>
+          ) : null)
+  const rowOpen = (id: string) => editor?.type === 'connection' ? editor.existing && editor.id === id : editor?.connectionId === id
 
   const configuredCount = Object.values(states).filter(s => s.configured).length
 
@@ -171,30 +276,6 @@ export function V2Settings({ scope, credentials }: V2SettingsProps) {
         <div className="v2s-body" id={bodyId}>
           {!snapshot.writable && snapshot.status === 'ready' ? (
             <p className="v2s-status-text v2s-status-info" role="status">当前设置只读或尚未完成加载。</p>
-          ) : null}
-
-          {config.version !== 2 && ['modelMode', 'protocol', 'baseURL', 'model', 'apiKeyEnv'].some(k => object(config)[k] !== undefined) ? (
-            <div className="v2s-callout v2s-callout-warn">
-              <h4 className="v2s-callout-warn-title">检测到旧版配置（v1），需要显式导入</h4>
-              <p className="v2s-hint">固定路由将成为 custom:legacy；跟随模式保留为“跟随会话模型”。旧 fallback 不再执行。请先把任何明文 apiKey 转存 DSH Credentials 并从旧配置移除。</p>
-              <div>
-                <button
-                  type="button"
-                  className="v2s-btn v2s-btn-primary"
-                  disabled={disabled}
-                  onClick={() => {
-                    void act(async () => {
-                      const imported = importLegacy(object(config))
-                      const ops: SettingsPathOpView[] = Object.entries(imported).map(([key, value]) => ({ op: 'set', path: [key], value: value as Extract<SettingsPathOpView, { op: 'set' }>['value'] }))
-                      for (const key of ['modelMode','protocol','baseURL','model','fallbackModel','apiKeyEnv','apiVersion','toolIdentifier','maxTokens','maxUses','chatSearchMode','searchContextSize']) if (Object.hasOwn(object(snapshot.user), key)) ops.push({op:'unset',path:[key]})
-                      await mutate(ops)
-                    }, '旧连接已导入为新会话默认；已有会话仍需显式选择。')
-                  }}
-                >
-                  导入旧配置（不迁移或删除 Key）
-                </button>
-              </div>
-            </div>
           ) : null}
 
           <div className="v2s-callout">
@@ -256,8 +337,10 @@ export function V2Settings({ scope, credentials }: V2SettingsProps) {
                 const keyless = supportsKeyless && config.connections?.[id]?.access !== 'api-key'
                 const configured = keyless || states[ref]?.configured === true
                 const isDisabled = config.connections?.[id]?.disabled === true
+                const currentMailto = String(object(config.connections?.[id]?.options).mailto ?? '')
                 return (
-                  <div key={id} className="v2s-row">
+                  <div key={id} className="v2s-row-group">
+                    <div className={'v2s-row' + (rowOpen(id) ? ' v2s-row-open' : '')}>
                     <div className="v2s-row-main">
                       <span className={'v2s-dot ' + (configured ? 'v2s-dot-configured' : 'v2s-dot-missing')} title={configured ? '已配置' : '未配置'} />
                       <div className="v2s-row-info">
@@ -270,29 +353,53 @@ export function V2Settings({ scope, credentials }: V2SettingsProps) {
                           <span>{keyless ? '免 Key · 公共限额（受网络限制）' : configured ? '已配置凭据' : '未配置凭据'}</span>
                           <span>·</span>
                           {!keyless ? <span>凭据引用: <code>{ref}</code></span> : <span>{c.adapter === 'exa' || c.adapter === 'tinyfish' ? c.label + ' MCP' : c.label + ' Search API'}</span>}
+                          {c.adapter === 'openalex' ? (
+                            <>
+                              <span>·</span>
+                              <span>礼貌邮箱: {currentMailto ? <code>{currentMailto}</code> : '默认'}</span>
+                            </>
+                          ) : null}
                         </div>
                       </div>
                     </div>
                     <div className="v2s-row-actions">
                       {supportsKeyless ? <select className="v2s-select" aria-label={c.label + ' 访问方式'} disabled={disabled} value={keyless ? 'keyless' : 'api-key'} onChange={e => { void act(() => mutate(sparseSettingOperations(snapshot, ['connections', id, 'access'], e.target.value, 'keyless')), '访问方式已保存，下一次模型请求生效。') }}><option value="keyless">免 Key（限额）</option><option value="api-key">个人 API Key</option></select> : null}
+                      {c.adapter === 'openalex' ? (
+                        <button
+                          type="button"
+                          className={'v2s-btn ' + (editor?.type === 'mailto' && editor.connectionId === id ? 'v2s-btn-active' : '')}
+                          disabled={disabled}
+                          aria-expanded={editor?.type === 'mailto' && editor.connectionId === id}
+                          onClick={() => openMailto(id, String(config.connections?.[id]?.label ?? c.label))}
+                        >
+                          {currentMailto ? '管理邮箱' : '礼貌邮箱'}
+                        </button>
+                      ) : null}
                       <button
                         type="button"
-                        className="v2s-btn"
+                        className={'v2s-btn ' + (editor?.type === 'key' && editor.connectionId === id ? 'v2s-btn-active' : '')}
                         disabled={busy || keyless}
-                        aria-expanded={editor?.type === 'key' && editor.ref === ref}
-                        onClick={() => openKey(ref)}
+                        aria-expanded={editor?.type === 'key' && editor.connectionId === id}
+                        onClick={() => openKey(id, ref)}
                       >
                         {keyless ? '无需 Key' : configured ? '管理 Key' : '配置 Key'}
                       </button>
                     </div>
-                  </div>
-                )
-              })}
-            </div>
+                    </div>
+                    {renderKeyEditor(id, ref)}
+                  {editor?.type === 'mailto' && editor.connectionId === id ? (
+                    <div className="v2s-inline-key-panel" role="region" aria-label={'礼貌邮箱配置：' + editor.label}>
+                      <div className="v2s-inline-key-head"><strong className="v2s-inline-key-title">配置礼貌邮箱（Polite Pool）</strong><span className="v2s-inline-key-sub">清空可恢复默认标识</span></div>
+                      <div className="v2s-inline-key-input-row"><input className="v2s-input v2s-inline-key-input" aria-label="礼貌邮箱" type="email" autoComplete="email" placeholder="例如: your-name@institution.edu" value={mailtoValue} disabled={disabled} onChange={e => setMailtoValue(e.target.value)} /><div className="v2s-inline-key-actions"><button type="button" className="v2s-btn" onClick={close}>取消</button><button type="button" className="v2s-btn v2s-btn-primary" disabled={disabled || busy || (mailtoValue.trim().length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mailtoValue.trim()))} onClick={() => { const email = mailtoValue.trim(); if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setError('请输入合法的电子邮箱格式（例如 user@example.com）。'); return }; void act(async () => { await mutate(sparseSettingOperations(snapshot, ['connections', id, 'options', 'mailto'], email || undefined)) }, email ? '礼貌邮箱已保存，下一次模型请求生效。' : '已恢复使用默认公共礼貌邮箱。') }}>{!mailtoValue.trim() && currentMailto ? '恢复默认' : '保存邮箱'}</button></div></div>
+                    </div>
+                  ) : null}
+                </div>
+              )
+            })}
           </div>
+        </div>
 
-          <div className="v2s-divider" />
-
+        <div className="v2s-divider" />
           <div className="v2s-section">
             <div className="v2s-section-head">
               <h4 className="v2s-section-title">模型与自定义连接</h4>
@@ -301,6 +408,7 @@ export function V2Settings({ scope, credentials }: V2SettingsProps) {
                 <button type="button" className="v2s-btn v2s-btn-dashed" disabled={disabled} onClick={() => openConnection('structured')}>+ 添加自定义结构化连接</button>
               </div>
             </div>
+            {editor?.type === 'connection' && !editor.existing ? connectionPanel : null}
             <div className="v2s-list">
               <div className="v2s-row">
                 <div className="v2s-row-main">
@@ -320,7 +428,8 @@ export function V2Settings({ scope, credentials }: V2SettingsProps) {
                 const ref = refFor(id)
                 const configured = ref ? states[ref]?.configured === true : false
                 return (
-                  <div key={id} className="v2s-row">
+                  <div key={id} className="v2s-row-group">
+                    <div className={'v2s-row' + (rowOpen(id) ? ' v2s-row-open' : '')}>
                     <div className="v2s-row-main">
                       <span className={'v2s-dot ' + (configured ? 'v2s-dot-configured' : 'v2s-dot-missing')} />
                       <div className="v2s-row-info">
@@ -333,8 +442,8 @@ export function V2Settings({ scope, credentials }: V2SettingsProps) {
                       </div>
                     </div>
                     <div className="v2s-row-actions">
-                      <button type="button" className="v2s-btn" disabled={disabled} onClick={() => openConnection(c.kind === 'model' ? 'model' : 'structured', id)}>编辑</button>
-                      {ref ? <button type="button" className="v2s-btn" disabled={busy} onClick={() => openKey(ref)}>管理 Key</button> : null}
+                      <button type="button" className="v2s-btn" disabled={disabled} aria-expanded={editor?.type === 'connection' && editor.id === id} onClick={() => openConnection(c.kind === 'model' ? 'model' : 'structured', id)}>编辑</button>
+                      {ref ? <button type="button" className={'v2s-btn ' + (editor?.type === 'key' && editor.connectionId === id ? 'v2s-btn-active' : '')} aria-expanded={editor?.type === 'key' && editor.connectionId === id} disabled={busy} onClick={() => openKey(id, ref)}>管理 Key</button> : null}
                       <button
                         type="button"
                         className="v2s-btn v2s-btn-danger"
@@ -344,120 +453,14 @@ export function V2Settings({ scope, credentials }: V2SettingsProps) {
                         移除覆盖
                       </button>
                     </div>
+                    </div>
+                    {renderKeyEditor(id, ref)}
+                    {editor?.type === 'connection' && editor.existing && editor.id === id ? connectionPanel : null}
                   </div>
                 )
               })}
             </div>
           </div>
-
-          {editor?.type === 'key' ? (
-            <div className="v2s-editor-panel" role="region" aria-label={'凭据配置：' + editor.ref}>
-              <div className="v2s-editor-head">
-                <h4 className="v2s-editor-title">凭据配置：<code>{editor.ref}</code></h4>
-                <button type="button" className="v2s-btn" disabled={busy} onClick={close}>✕ 取消</button>
-              </div>
-              <p className="v2s-hint">密钥仅提交到 DSH Credentials 凭据服务，不写入 settings，不回显现有值。</p>
-              <div className="v2s-field">
-                <label className="v2s-label" htmlFor={bodyId + '-key-val'}>新 API Key</label>
-                <input
-                  id={bodyId + '-key-val'}
-                  className="v2s-input"
-                  type="password"
-                  autoComplete="new-password"
-                  placeholder="输入新的 API Key…"
-                  value={keyValue}
-                  disabled={states[editor.ref]?.writable === false}
-                  onChange={e => setKeyValue(e.target.value)}
-                />
-                {states[editor.ref]?.writable === false ? <p className="v2s-hint v2s-status-error">此凭据来源只读，请通过宿主凭据配置管理。</p> : null}
-              </div>
-              <div className="v2s-editor-foot">
-                <button type="button" className="v2s-btn" onClick={close}>取消</button>
-                <button
-                  type="button"
-                  className="v2s-btn v2s-btn-primary"
-                  disabled={!keyValue.trim() || states[editor.ref]?.writable === false || busy}
-                  onClick={() => {
-                    const ref = editor.ref
-                    const secret = keyValue
-                    void act(async () => {
-                      await saveV2Credential(credentials, ref, secret)
-                      if (alive.current) { setKeyValue(''); setRefresh(n => n + 1) }
-                    }, '凭据已保存；连接选择未改变。')
-                  }}
-                >
-                  仅保存 Key
-                </button>
-              </div>
-            </div>
-          ) : null}
-
-          {editor?.type === 'connection' ? (
-            <div className="v2s-editor-panel" role="region" aria-label={editor.existing ? ('编辑连接：' + editor.id) : '添加自定义连接'}>
-              <div className="v2s-editor-head">
-                <h4 className="v2s-editor-title">{editor.existing ? ('编辑连接：' + editor.id) : '添加自定义连接'}</h4>
-                <button type="button" className="v2s-btn" disabled={busy} onClick={close}>✕ 取消</button>
-              </div>
-              <div className="v2s-field">
-                <label className="v2s-label" htmlFor={bodyId + '-conn-id'}>连接 ID</label>
-                <input
-                  id={bodyId + '-conn-id'}
-                  className="v2s-input"
-                  value={connectionId}
-                  disabled={editor.existing}
-                  onChange={e => setConnectionId(e.target.value)}
-                  placeholder="custom:my-search"
-                />
-                <p className="v2s-hint">必须是 custom: 开头的字母、数字、点、下划线或连字符</p>
-              </div>
-              <div className="v2s-grid">
-                <label className="v2s-field"><span className="v2s-label">连接名称</span><input className="v2s-input" value={String(draft.label ?? '')} onChange={e => patchDraft(['label'], e.target.value)} /></label>
-                {draft.kind === 'model' ? <>
-                  <label className="v2s-field"><span className="v2s-label">搜索协议</span><select className="v2s-select" value={String(object(draft.binding).protocol ?? '')} onChange={e => patchDraft(['binding','protocol'], e.target.value)}><option value="openai-responses">OpenAI Responses</option><option value="anthropic-messages">Anthropic Messages</option><option value="openai-chat-completions">OpenAI Chat Completions</option></select></label>
-                  <label className="v2s-field"><span className="v2s-label">模型 ID</span><input className="v2s-input" value={String(object(draft.binding).model ?? '')} onChange={e => patchDraft(['binding','model'], e.target.value)} /></label>
-                </> : <label className="v2s-field"><span className="v2s-label">搜索服务</span><select className="v2s-select" value={String(draft.adapter ?? '')} onChange={e => patchDraft(['adapter'], e.target.value)}>{Object.values(CATALOG).map(c => <option key={c.adapter} value={c.adapter}>{c.label}</option>)}</select></label>}
-                <label className="v2s-field"><span className="v2s-label">服务地址（HTTP API）</span><input className="v2s-input" type="url" value={String(draft.kind === 'model' ? object(draft.binding).baseURL ?? '' : draft.endpoint ?? '')} onChange={e => patchDraft(draft.kind === 'model' ? ['binding','baseURL'] : ['endpoint'], e.target.value)} /></label>
-                <label className="v2s-field"><span className="v2s-label">凭据引用（不是 Key 本身）</span><input className="v2s-input" autoComplete="off" value={String(draft.kind === 'model' ? object(draft.binding).credentialRef ?? '' : draft.credentialRef ?? '')} onChange={e => patchDraft(draft.kind === 'model' ? ['binding','credentialRef'] : ['credentialRef'], e.target.value)} /></label>
-              </div>
-              <details className="v2s-field"><summary className="v2s-label">高级：YAML 与协议选项</summary>
-                <label className="v2s-label" htmlFor={bodyId + '-conn-yaml'}>连接配置 YAML（禁止明文 Key）</label>
-                <textarea
-                  id={bodyId + '-conn-yaml'}
-                  className="v2s-textarea"
-                  rows={14}
-                  spellCheck={false}
-                  value={yamlText}
-                  onChange={e => { setYamlText(e.target.value); setConsent(false) }}
-                />
-                <p className="v2s-hint">model 使用 binding（mode=fixed、protocol、model、baseURL、credentialRef）；structured 使用 adapter、endpoint、credentialRef。具体选项由宿主校验。</p>
-              </details>
-              <label className="v2s-checkbox-label">
-                <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} />
-                <span>我确认信任此 endpoint / baseURL，并授权向该地址发送此 credentialRef 对应凭据。</span>
-              </label>
-              {editor.revision !== snapshot.revision ? (
-                <p className="v2s-status-text v2s-status-error" role="alert">设置版本已变化。请放弃并重新打开编辑器，以免覆盖其他窗口的修改。</p>
-              ) : null}
-              <div className="v2s-editor-foot">
-                <button type="button" className="v2s-btn" onClick={close}>放弃编辑</button>
-                <button
-                  type="button"
-                  className="v2s-btn v2s-btn-primary"
-                  disabled={!consent || disabled}
-                  onClick={() => {
-                    void act(async () => {
-                      const id = connectionId.trim()
-                      if (!editor.existing && (labels.has(id) || Object.hasOwn(config.connections ?? {}, id))) throw new Error('此连接 ID 已存在，请使用新的 ID。')
-                      const connection = parseConnectionDraft(id, yamlText, consent)
-                      await mutate(sparseSettingOperations(editor.initial, ['connections', id], connection), editor.revision)
-                    }, '连接已保存；请单独配置凭据并在会话中选择。')
-                  }}
-                >
-                  保存连接
-                </button>
-              </div>
-            </div>
-          ) : null}
 
           <div className="v2s-footer">
             <div className="v2s-status-area">

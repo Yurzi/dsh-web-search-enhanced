@@ -67,10 +67,10 @@
 
 **方式 A：通过 GitHub Release 离线包安装（推荐）**
 
-从 [v0.1.1 Release](https://github.com/Yurzi/dsh-web-search-enhanced/releases/tag/v0.1.1) 下载预构建包 `dsh-web-search-enhanced-0.1.1.tgz`，执行绝对路径安装命令：
+从 [v0.1.2 Release](https://github.com/Yurzi/dsh-web-search-enhanced/releases/tag/v0.1.2) 下载预构建包 `dsh-web-search-enhanced-0.1.2.tgz`，执行绝对路径安装命令：
 
 ```sh
-dsh plugin --profile web add /path/to/dsh-web-search-enhanced-0.1.1.tgz
+dsh plugin --profile web add /path/to/dsh-web-search-enhanced-0.1.2.tgz
 ```
 
 **方式 B：通过 npm 在线安装**
@@ -78,7 +78,7 @@ dsh plugin --profile web add /path/to/dsh-web-search-enhanced-0.1.1.tgz
 在版本已发布到 npm 仓库后，也可直接安装：
 
 ```sh
-dsh plugin --profile web add dsh-web-search-enhanced@0.1.1
+dsh plugin --profile web add dsh-web-search-enhanced@0.1.2
 ```
 
 ### 步骤 2：生效与刷新
@@ -135,11 +135,13 @@ _注：实时抓取可能会稍微增加检索耗时与额度消耗；对于不�
 
 1. **绑定个人 API Key**：
    - 找到目标连接（例如 Firecrawl 或 Tavily）。
-   - 在凭据输入框填入你的 API Key，点击保存（将自动存入 DSH Credentials，安全可靠）。
-   - 将“访问方式”从“免 Key”切换为“个人 Key”。
-2. **设置新会话默认连接**：
+   - 点击目标连接行上的“配置 Key”，在行内展开的输入框中填写 API Key 并保存（将自动存入 DSH Credentials，安全可靠）。
+   - 将“访问方式”从“免 Key”切换为“个人 Key”。OpenAlex 的个人 Key 会按官方要求通过 api_key 查询参数发送。
+2. **配置 OpenAlex 礼貌邮箱（可选）**：
+   - 在 OpenAlex 连接行点击“礼貌邮箱”，行内填写联系邮箱；清空后保存即可恢复默认公共标识。
+3. **设置新会话默认连接**：
    - 在“新会话默认连接”下拉框中选择你最常用的引擎，新创建的对话将自动应用该偏好。
-3. **添加自定义模型或端点**：
+4. **添加自定义模型或端点**：
    - 支持添加任意兼容 OpenAI 或 Anthropic 服务端搜索协议的模型端点。
 
 完整配置语法与高级参数白名单，请参阅 📖 [详细配置指南](docs/configuration.zh-CN.md)。
@@ -186,7 +188,7 @@ _注：实时抓取可能会稍微增加检索耗时与额度消耗；对于不�
 <details>
 <summary><b>Q5: 如何从 0.0.x 旧版本平滑升级？</b></summary>
 
-进入 **设置 → 插件 → Web Search Enhanced**，系统会自动检测旧版全局模型配置并弹出“导入旧配置”提示，一键点击即可无缝映射为新版连接配置。详细注意事项请参阅 📖 [升级指南](docs/migration.zh-CN.md)。
+升级后重新加载插件或重启 DSH，插件会在启动时自动检测并迁移旧版全局模型配置；迁移成功后映射为新版连接配置。若出现迁移错误，请检查宿主日志、DSH Credentials 权限和旧配置，再重启插件。详细注意事项请参阅 📖 [升级指南](docs/migration.zh-CN.md)。
 </details>
 
 ---

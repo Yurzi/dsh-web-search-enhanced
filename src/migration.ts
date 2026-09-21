@@ -1,5 +1,10 @@
 import type { V2Config } from './config.ts'
 import { SESSION_MODEL_ID } from './catalog.ts'
+export const LEGACY_FIELDS = ['modelMode', 'protocol', 'baseURL', 'model', 'fallbackModel', 'apiKey', 'apiKeyEnv', 'apiVersion', 'toolIdentifier', 'maxTokens', 'maxUses', 'chatSearchMode', 'searchContextSize'] as const
+export function needsMigration(value: object): boolean {
+  const raw = value as Record<string, unknown>
+  return raw.version !== 2 && LEGACY_FIELDS.some(key => raw[key] !== undefined)
+}
 /** Explicit, secret-free legacy import; never writes settings or enables fallback. */
 export function importLegacy(raw: Record<string, unknown>): V2Config {
   if (raw.apiKey) throw new Error('Move legacy apiKey to DSH Credentials before importing V2')

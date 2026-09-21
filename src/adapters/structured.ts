@@ -88,7 +88,7 @@ export async function searchStructured(
   if (anonymous && adapter === 'tavily') headers['x-tavily-access-mode'] = 'keyless'
   if (adapter === 'exa' || adapter === 'tinyfish' || adapter === 'semanticscholar') {
     headers['x-api-key'] = context.apiKey ?? ''
-  } else if (context.apiKey) {
+  } else if (context.apiKey && adapter !== 'openalex') {
     headers.authorization = 'Bearer ' + context.apiKey
   }
   if (adapter === 'firecrawl') {
@@ -108,6 +108,7 @@ export async function searchStructured(
     if (limit !== undefined) endpoint.searchParams.set('per-page', String(limit))
     const mailto = typeof options.mailto === 'string' ? options.mailto : 'dsh-web-search@users.noreply.github.com'
     endpoint.searchParams.set('mailto', mailto)
+    if (context.apiKey) endpoint.searchParams.set('api_key', context.apiKey)
     const filters: string[] = []
     if (typeof options.filter === 'string' && options.filter.trim()) filters.push(options.filter.trim())
     if (typeof options.is_oa === 'boolean') filters.push('is_oa:' + options.is_oa)
