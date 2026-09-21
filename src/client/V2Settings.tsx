@@ -150,11 +150,11 @@ export function V2Settings({ scope, credentials }: V2SettingsProps) {
         className="v2s-header"
         aria-expanded={open}
         aria-controls={bodyId}
-        aria-label={(open ? '折叠' : '展开') + ': 搜索连接'}
+        aria-label={(open ? '折叠' : '展开') + ': Web Search Enhanced'}
         onClick={() => setOpen(v => !v)}
       >
         <span className="v2s-head-text">
-          <span className="v2s-title">搜索连接</span>
+          <span className="v2s-title">Web Search Enhanced</span>
           <span className="v2s-desc">管理会话搜索连接、凭据引用与内容实时性偏好</span>
         </span>
         <span className="v2s-header-meta">

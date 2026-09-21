@@ -14,11 +14,11 @@ function render(writable = true) {
 describe('DSH-styled settings rendering', () => {
   it('defaults to collapsed card with accessible toggle and no credential describe calls', () => {
     const { html, describe } = render()
-    expect(html).toContain('搜索连接')
+    expect(html).toContain('<span class="v2s-title">Web Search Enhanced</span>')
     expect(html).toContain('管理会话搜索连接、凭据引用与内容实时性偏好')
     expect(html).toContain('aria-expanded="false"')
     expect(html).toContain('data-open="false"')
-    expect(html).toContain('aria-label="展开: 搜索连接"')
+    expect(html).toContain('aria-label="展开: Web Search Enhanced"')
     expect(html).toContain('aria-controls=')
     expect(html).toContain('--dsw-alias-border-l2')
     expect(html).not.toContain('aria-expanded="true"')
