@@ -10,7 +10,6 @@ export const v2CardCss = `
   color: var(--dsw-alias-label-primary);
   transition: border-color .16s ease, background .16s ease;
   overflow: hidden;
-  margin-bottom: 12px;
 }
 .v2s-card:hover {
   border-color: var(--dsw-alias-label-dimmed);

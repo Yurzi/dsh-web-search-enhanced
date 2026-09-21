@@ -73,7 +73,7 @@ const template = (kind: 'model' | 'structured') => JSON.stringify(kind === 'mode
 export function V2Settings({ scope, credentials }: V2SettingsProps) {
   const snapshot = useSyncExternalStore(scope.subscribe.bind(scope), scope.getSnapshot.bind(scope), scope.getSnapshot.bind(scope))
   const config = snapshot.value ?? {}
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(false)
   const [editor, setEditor] = useState<{ type: 'key'; ref: string } | { type: 'connection'; id: string; initial: SparseSnapshot; revision: number; existing: boolean } | null>(null)
   const [json, setJson] = useState('')
   const [connectionId, setConnectionId] = useState('custom:')
