@@ -7,6 +7,8 @@
 ### 全新搜索连接架构
 
 - 用会话级搜索连接取代旧全局模型配置；对话模型与搜索连接独立选择。
+- 设置页自定义连接配置全面拥抱 DSH 原生 YAML 规范（替换原 JSON 格式），提升阅读与编辑体验并保持向后兼容。
+- 提供命令行配置自动迁移脚本 `scripts/migrate-config.mjs` (`pnpm run migrate`)，支持老用户一键备份原配置、纠正 JSON flow-style 为规范的 DSH YAML 块级缩进，并自动转换旧版路由。
 - 内置 Exa、Firecrawl、Tavily、Tinyfish，支持显式免 Key / 个人 API Key 模式；安装为新会话默认选择 Exa。
 - 支持固定搜索模型及跟随会话模型，适配 Anthropic Messages、OpenAI Responses、OpenAI Chat Completions。
 - 会话持久化连接与内容实时性偏好；请求使用冻结快照，fork 复制后独立，多标签页通过 revision 检测冲突。

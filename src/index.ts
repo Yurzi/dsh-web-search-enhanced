@@ -1,7 +1,10 @@
 /** V2 session-scoped search connections for DSH's native web_search tool. */
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import type { Context } from '@deepseek-ai/cordis'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-settings'
 import z from '@deepseek-ai/schemastery'
+import { parseDocument } from 'yaml'
 import { resolveSettings, importLegacy, type V2Config } from './config.ts'
 import { installBridge } from './dsh/bridge.ts'
 import { searchError } from './search/service.ts'
@@ -28,6 +31,55 @@ export function apply(ctx: Context, config: Config = {}): void {
     settingsCtx.settings.installSection(ctx, SETTINGS_NAMESPACE, Config, config, {
       setSource(source) { current = source }, onChange() {}, validate: validateSettings,
     })
+    // Auto-detect and migrate legacy v1 user configuration on startup / upgrade
+    const descriptor = settingsCtx.settings.describe().find(d => d.ns === SETTINGS_NAMESPACE)
+    const user = descriptor?.user as Record<string, unknown> | undefined
+    if (user && user.version !== 2 && ['modelMode', 'protocol', 'baseURL', 'model', 'apiKeyEnv'].some(k => user[k] !== undefined)) {
+      try {
+        const raw = { ...user }
+        if (typeof raw.apiKey === 'string' && raw.apiKey.trim() && ctx.get('credentials')) {
+          const targetRef = (typeof raw.apiKeyEnv === 'string' && raw.apiKeyEnv.trim()) || 'WEB_SEARCH_ENHANCED_API'
+          void ctx.credentials.set(credentialRef(targetRef), raw.apiKey.trim()).catch(() => {})
+          delete raw.apiKey
+        }
+        const migrated = importLegacy(raw)
+        void settingsCtx.settings.replace(SETTINGS_NAMESPACE as never, migrated).catch(() => {})
+      } catch {
+        // Fall back gracefully to manual import in settings UI
+      }
+    }
+
+    // Auto-correct flow-style inline JSON formatting in settings.yaml if present
+    const docPath = (settingsCtx.settings as unknown as { documentPath?: string })?.documentPath
+    if (typeof docPath === 'string' && existsSync(docPath)) {
+      try {
+        const text = readFileSync(docPath, 'utf8')
+        const doc = parseDocument(text)
+        const node = doc.get(SETTINGS_NAMESPACE, true) as { flow?: boolean; items?: unknown[] } | undefined
+        if (node && node.flow) {
+          const toBlock = (n: unknown): void => {
+            if (!n || typeof n !== 'object') return
+            const m = n as { flow?: boolean; items?: unknown[] }
+            if (Array.isArray(m.items)) {
+              if (m.items.length === 0) m.flow = true
+              else {
+                m.flow = false
+                for (const item of m.items) {
+                  const pair = item as { key?: unknown; value?: unknown }
+                  if (pair && typeof pair === 'object' && ('key' in pair || 'value' in pair)) {
+                    toBlock(pair.key); toBlock(pair.value)
+                  } else toBlock(item)
+                }
+              }
+            }
+          }
+          toBlock(node)
+          writeFileSync(docPath, doc.toString(), 'utf8')
+        }
+      } catch {
+        // Non-fatal: ignored under locked or read-only filesystems
+      }
+    }
   })
   installBridge(ctx, () => {
     const value = current()

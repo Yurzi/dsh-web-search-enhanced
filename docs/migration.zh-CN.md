@@ -30,7 +30,31 @@ dsh plugin --profile web add dsh-web-search-enhanced@0.1.0
 
 升级含服务端与客户端契约变更。重新加载插件或重启 DSH，**然后刷新 Web 页面**；只刷新浏览器不足以更新服务端。此操作可能影响运行中任务，应在合适时机进行。
 
-## 3. 显式导入旧配置
+## 3. 显式导入旧配置与自动迁移脚本
+
+针对老用户的历史配置，插件提供两种迁移方式：**Web 设置页导入**与**命令行自动迁移脚本**。
+
+### 方式一：命令行自动迁移脚本（推荐）
+
+针对已有部署或自动化环境，插件提供了针对老用户的自动迁移脚本。该脚本会自动检测 DSH `settings.yaml`，备份原文件，将遗留的 JSON / flow-style 格式转换为标准 DSH YAML 块级缩进格式，并完成 v1 到 v2 模型的无缝迁移：
+
+```sh
+# 预览迁移效果（不修改文件）
+node scripts/migrate-config.mjs --dry-run
+
+# 执行自动迁移（自动备份原文件为 .bak）
+pnpm run migrate
+# 或
+node scripts/migrate-config.mjs
+```
+
+脚本特性：
+- **安全备份**：在对配置文件做任何修改前，自动创建 `.bak` 备份文件。
+- **YAML 格式规范化**：自动修复此前设置页或外部写入产生的 JSON 行内花括号 (`flow-style`)，统一输出为符合 DSH 原生规范的标准块级 YAML。
+- **旧版路由迁移**：自动将旧版 `modelMode: configured` 转换为 `custom:legacy`，或将 `modelMode: current-session` 转换为 `builtin:session-model`。
+- **凭据安全保护**：若旧配置存在明文 `apiKey`，脚本会明确告警并将其从公开配置中剥离，提示移入 DSH Credentials。
+
+### 方式二：Web 界面显式导入
 
 打开设置 → 插件 → Web Search Enhanced。检测到旧 `modelMode/protocol/baseURL/model/apiKeyEnv` 且未标记 version 2 时，显示导入入口。搜索返回 `WEB_SEARCH_MIGRATION_REQUIRED` 是保护措施，不会静默选新默认替代旧路由。
 

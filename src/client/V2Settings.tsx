@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
+import YAML from 'yaml'
 import type { V2Config } from '../config.ts'
 import type { CredentialRemote } from './SearchSettingsCard.tsx'
 import { CATALOG, SESSION_MODEL_ID, SESSION_MODEL_LABEL } from '../catalog.ts'
@@ -38,16 +39,16 @@ export function sparseSettingOperations(snapshot: SparseSnapshot, path: string[]
 export function resetSettingsOperations(snapshot: SparseSnapshot): SettingsPathOpView[] {
   return ['version', 'freshness', 'defaultConnection', 'connections'].filter(k => Object.hasOwn(object(snapshot.user), k)).map(k => ({ op: 'unset', path: [k] }))
 }
-/** JSON is configuration only; consent is always supplied by the separate checkbox. */
-export function parseConnectionDraft(id: string, json: string, consent: boolean): Record<string, unknown> {
+/** YAML is configuration only; consent is always supplied by the separate checkbox. */
+export function parseConnectionDraft(id: string, text: string, consent: boolean): Record<string, unknown> {
   if (!/^custom:[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/u.test(id)) throw new Error('连接 ID 必须是 custom: 开头的字母、数字、点、下划线或连字符。')
   let parsed: unknown
-  try { parsed = JSON.parse(json) } catch { throw new Error('JSON 格式无效，请检查括号、引号和逗号。') }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('连接配置必须是 JSON 对象。')
+  try { parsed = YAML.parse(text) } catch { throw new Error('YAML 格式无效，请检查缩进与语法。') }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('连接配置必须是 YAML 对象。')
   const config = { ...object(parsed) }
   const inspect = (value: unknown): void => {
     for (const [key, child] of Object.entries(value && typeof value === 'object' ? value : {})) {
-      if (/^(apiKey|key|secret|token|password|authorization|headers)$/i.test(key)) throw new Error('请将密钥写入凭据服务，不要放入 JSON。')
+      if (/^(apiKey|key|secret|token|password|authorization|headers)$/i.test(key)) throw new Error('请将密钥写入凭据服务，不要放入 YAML。')
       if (child && typeof child === 'object') inspect(child)
     }
   }
@@ -66,16 +67,16 @@ export async function saveV2Credential(credentials: CredentialRemote, ref: strin
     if (!result.ok) throw new Error('credential write rejected')
   } catch { throw new Error('凭据保存失败，请检查宿主凭据服务。') }
 }
-const template = (kind: 'model' | 'structured') => JSON.stringify(kind === 'model' ? {
+const template = (kind: 'model' | 'structured') => YAML.stringify(kind === 'model' ? {
   label: '专用搜索模型', kind, binding: { mode: 'fixed', protocol: 'openai-responses', model: 'search-capable-model', baseURL: 'https://gateway.example/v1', credentialRef: 'SEARCH_MODEL_API_KEY' }, options: {},
-} : { label: 'Exa 独立账号', kind, adapter: 'exa', endpoint: CATALOG['builtin:exa'].endpoint, credentialRef: 'EXA_WORK_API_KEY', options: {} }, null, 2)
+} : { label: 'Exa 独立账号', kind, adapter: 'exa', endpoint: CATALOG['builtin:exa'].endpoint, credentialRef: 'EXA_WORK_API_KEY', options: {} })
 
 export function V2Settings({ scope, credentials }: V2SettingsProps) {
   const snapshot = useSyncExternalStore(scope.subscribe.bind(scope), scope.getSnapshot.bind(scope), scope.getSnapshot.bind(scope))
   const config = snapshot.value ?? {}
   const [open, setOpen] = useState(false)
   const [editor, setEditor] = useState<{ type: 'key'; ref: string } | { type: 'connection'; id: string; initial: SparseSnapshot; revision: number; existing: boolean } | null>(null)
-  const [json, setJson] = useState('')
+  const [yamlText, setYamlText] = useState('')
   const [connectionId, setConnectionId] = useState('custom:')
   const [consent, setConsent] = useState(false)
   const [keyValue, setKeyValue] = useState('')
@@ -85,12 +86,12 @@ export function V2Settings({ scope, credentials }: V2SettingsProps) {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   let draft: Record<string, unknown> = {}
-  try { draft = object(JSON.parse(json)) } catch { /* advanced JSON validation stays explicit */ }
+  try { draft = object(YAML.parse(yamlText)) } catch { /* advanced YAML validation stays explicit */ }
   const patchDraft = (path: string[], value: string) => {
     const next = { ...draft }
     if (path.length === 2) next[path[0]!] = { ...object(next[path[0]!]), [path[1]!]: value }
     else next[path[0]!] = value
-    setJson(JSON.stringify(next, null, 2)); setConsent(false)
+    setYamlText(YAML.stringify(next)); setConsent(false)
   }
   const bodyId = useId()
   const alive = useRef(true)
@@ -130,7 +131,7 @@ export function V2Settings({ scope, credentials }: V2SettingsProps) {
     if (snapshot.revision === undefined) return
     setOpen(true)
     setEditor({ type: 'connection', id: id ?? '', existing: !!id, initial: { base: snapshot.base, user: snapshot.user }, revision: snapshot.revision })
-    setConnectionId(id ?? 'custom:'); setJson(id ? JSON.stringify(config.connections?.[id], null, 2) : template(kind)); setConsent(false); setKeyValue(''); setError('')
+    setConnectionId(id ?? 'custom:'); setYamlText(id ? YAML.stringify(config.connections?.[id] ?? {}) : template(kind)); setConsent(false); setKeyValue(''); setError('')
   }
   const openKey = (ref: string) => {
     setOpen(true)
@@ -418,15 +419,15 @@ export function V2Settings({ scope, credentials }: V2SettingsProps) {
                 <label className="v2s-field"><span className="v2s-label">服务地址（HTTP API）</span><input className="v2s-input" type="url" value={String(draft.kind === 'model' ? object(draft.binding).baseURL ?? '' : draft.endpoint ?? '')} onChange={e => patchDraft(draft.kind === 'model' ? ['binding','baseURL'] : ['endpoint'], e.target.value)} /></label>
                 <label className="v2s-field"><span className="v2s-label">凭据引用（不是 Key 本身）</span><input className="v2s-input" autoComplete="off" value={String(draft.kind === 'model' ? object(draft.binding).credentialRef ?? '' : draft.credentialRef ?? '')} onChange={e => patchDraft(draft.kind === 'model' ? ['binding','credentialRef'] : ['credentialRef'], e.target.value)} /></label>
               </div>
-              <details className="v2s-field"><summary className="v2s-label">高级：JSON 与协议选项</summary>
-                <label className="v2s-label" htmlFor={bodyId + '-conn-json'}>连接配置 JSON（禁止明文 Key）</label>
+              <details className="v2s-field"><summary className="v2s-label">高级：YAML 与协议选项</summary>
+                <label className="v2s-label" htmlFor={bodyId + '-conn-yaml'}>连接配置 YAML（禁止明文 Key）</label>
                 <textarea
-                  id={bodyId + '-conn-json'}
+                  id={bodyId + '-conn-yaml'}
                   className="v2s-textarea"
                   rows={14}
                   spellCheck={false}
-                  value={json}
-                  onChange={e => { setJson(e.target.value); setConsent(false) }}
+                  value={yamlText}
+                  onChange={e => { setYamlText(e.target.value); setConsent(false) }}
                 />
                 <p className="v2s-hint">model 使用 binding（mode=fixed、protocol、model、baseURL、credentialRef）；structured 使用 adapter、endpoint、credentialRef。具体选项由宿主校验。</p>
               </details>
@@ -447,7 +448,7 @@ export function V2Settings({ scope, credentials }: V2SettingsProps) {
                     void act(async () => {
                       const id = connectionId.trim()
                       if (!editor.existing && (labels.has(id) || Object.hasOwn(config.connections ?? {}, id))) throw new Error('此连接 ID 已存在，请使用新的 ID。')
-                      const connection = parseConnectionDraft(id, json, consent)
+                      const connection = parseConnectionDraft(id, yamlText, consent)
                       await mutate(sparseSettingOperations(editor.initial, ['connections', id], connection), editor.revision)
                     }, '连接已保存；请单独配置凭据并在会话中选择。')
                   }}

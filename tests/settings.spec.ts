@@ -34,4 +34,29 @@ describe('V2 sparse settings integration',()=>{
   await expect(ctx.settings.update(ns,{apiKey:'fixture-not-real'})).rejects.toThrow('DSH Credentials')
   await pluginFiber.dispose();await expect(ctx.web.search({query:'q'})).rejects.toMatchObject({code:'WEB_PROVIDER_CONFIGURED_MISSING'});await ctx.fiber.dispose()
  })
+ it('automatically detects and migrates legacy v1 settings on startup', async () => {
+  class InitialLegacySettings extends SettingsProvider {
+   doc = {
+    [plugin.SETTINGS_NAMESPACE]: {
+     modelMode: 'configured',
+     model: 'deepseek-flash',
+     apiKeyEnv: 'MY_SEARCH_KEY',
+     maxTokens: 2048,
+    }
+   }
+   get writable() { return true }
+   protected load() { return Promise.resolve(structuredClone(this.doc)) }
+   protected persist(ns: SettingsNamespace, section: Record<string, unknown>) { this.doc = { ...this.doc, [ns]: structuredClone(section) }; return Promise.resolve() }
+  }
+  const ctx = new Context(); await ctx.plugin(WebRuntime, { searchProvider: plugin.DEFAULT_PROVIDER_ID })
+  await ctx.plugin(InitialLegacySettings)
+  const pluginFiber = ctx.plugin(plugin, {}); await pluginFiber.await()
+  // Wait for settings queue to settle
+  await new Promise(r => setTimeout(r, 50))
+  const user = ctx.settings.describe()[0]?.user as Record<string, unknown>
+  expect(user?.version).toBe(2)
+  expect(user?.defaultConnection).toBe('custom:legacy')
+  expect((user?.connections as Record<string, unknown>)?.[('custom:legacy')]).toBeDefined()
+  await ctx.fiber.dispose()
+ })
 })

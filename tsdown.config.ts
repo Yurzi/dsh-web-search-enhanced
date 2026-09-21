@@ -1,11 +1,13 @@
 import { readFileSync } from 'node:fs'
 import { isBuiltin } from 'node:module'
+import { fileURLToPath } from 'node:url'
 import { defineConfig, type UserConfig } from 'tsdown'
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { name: string; peerDependencies?: Record<string, string> }
 const id = pkg.name
 const clientPeers = Object.keys(pkg.peerDependencies ?? {}).filter(name => name !== '@deepseek-ai/schemastery')
 const isClientExternal = (dependency: string): boolean => clientPeers.some(peer => dependency === peer || dependency.startsWith(peer + '/'))
+const yamlBrowserPath = fileURLToPath(import.meta.resolve('yaml')).replace(/dist[\/\\]index\.js$/, 'browser/index.js')
 
 const host: UserConfig = {
   name: id,
@@ -18,6 +20,7 @@ const host: UserConfig = {
 }
 const client: UserConfig = {
   name: id + '/client', entry: { client: 'lib/types/client/index.js' }, outDir: 'lib', format: ['cjs'], platform: 'browser', target: 'es2024', dts: false, clean: false, sourcemap: true,
+  alias: { yaml: yamlBrowserPath },
   deps: { neverBundle: dependency => isClientExternal(dependency), alwaysBundle: dependency => isClientExternal(dependency) ? undefined : true, onlyBundle: false },
   define: {
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV ?? 'production'),

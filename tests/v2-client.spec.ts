@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import YAML from 'yaml'
 import { sparseSettingOperations, resetSettingsOperations, parseConnectionDraft, saveV2Credential } from '../src/client/V2Settings.tsx'
 import { createResponseGuard, discoverableConnections } from '../src/client/SearchConnectionSelector.tsx'
 import { SESSION_MODEL_ID } from '../src/catalog.ts'
@@ -38,18 +39,21 @@ describe('V2 sparse settings helpers', () => {
 
 describe('custom connection consent', () => {
   const config = { label: 'Research', kind: 'model', binding: { mode: 'fixed', protocol: 'openai-responses', model: 'search-model', baseURL: 'https://example.com/v1', credentialRef: 'SEARCH_KEY' } }
-  it('requires a separate explicit consent even when JSON claims trust', () => {
-    expect(() => parseConnectionDraft('custom:test', JSON.stringify({ ...config, trustedEndpoint: true }), false)).toThrow('确认')
+  it('requires a separate explicit consent even when YAML/JSON claims trust', () => {
+    expect(() => parseConnectionDraft('custom:test', YAML.stringify({ ...config, trustedEndpoint: true }), false)).toThrow('确认')
+    expect(parseConnectionDraft('custom:test', YAML.stringify(config), true)).toEqual({ ...config, trustedEndpoint: true })
+    // Backward compatibility: JSON format is also accepted by YAML parser
     expect(parseConnectionDraft('custom:test', JSON.stringify(config), true)).toEqual({ ...config, trustedEndpoint: true })
   })
-  it('rejects built-in IDs and nested plaintext credential fields', () => {
-    expect(() => parseConnectionDraft('builtin:exa', JSON.stringify(config), true)).toThrow('custom:')
-    expect(() => parseConnectionDraft('custom:test', JSON.stringify({ ...config, options: { apiKey: 'placeholder' } }), true)).toThrow('凭据服务')
-    expect(() => parseConnectionDraft('custom:test', JSON.stringify({ ...config, options: [{ password: 'placeholder' }] }), true)).toThrow('凭据服务')
+  it('rejects built-in IDs and nested plaintext credential fields in YAML', () => {
+    expect(() => parseConnectionDraft('builtin:exa', YAML.stringify(config), true)).toThrow('custom:')
+    expect(() => parseConnectionDraft('custom:test', YAML.stringify({ ...config, options: { apiKey: 'placeholder' } }), true)).toThrow('凭据服务')
+    expect(() => parseConnectionDraft('custom:test', YAML.stringify({ ...config, options: [{ password: 'placeholder' }] }), true)).toThrow('凭据服务')
   })
-  it('does not echo invalid JSON contents in errors', () => {
-    expect(() => parseConnectionDraft('custom:test', 'invalid-private-content', true)).toThrow('JSON 格式无效')
-    try { parseConnectionDraft('custom:test', 'invalid-private-content', true) } catch (error) { expect(String(error)).not.toContain('invalid-private-content') }
+  it('does not echo invalid YAML contents in errors and requires a YAML object', () => {
+    expect(() => parseConnectionDraft('custom:test', 'invalid: [private-content', true)).toThrow('YAML 格式无效')
+    expect(() => parseConnectionDraft('custom:test', '- array item', true)).toThrow('YAML 对象')
+    try { parseConnectionDraft('custom:test', 'invalid: [private-content', true) } catch (error) { expect(String(error)).not.toContain('private-content') }
   })
 })
 
