@@ -31,7 +31,11 @@ export async function apply(ctx: Context): Promise<void> {
   ctx.inject(['remote.searchConnections'], searchCtx => {
     searchCtx.slots.inject('conversation.input.right', () => searchCtx.slots.register({
       name: 'conversation.input.right', id: 'search-connection', order: 20,
-      inject: sessionId => ({ sessionId, remote: (searchCtx.remote as unknown as { searchConnections: SearchConnectionRemote }).searchConnections }),
+      inject: sessionId => ({
+        sessionId,
+        remote: (searchCtx.remote as unknown as { searchConnections: SearchConnectionRemote }).searchConnections,
+        sessions: typeof searchCtx.get === 'function' ? searchCtx.get('sessions') : (searchCtx as unknown as { sessions?: unknown }).sessions,
+      }),
     }, SearchConnectionSelector))
   })
 }

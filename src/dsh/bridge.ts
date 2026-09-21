@@ -61,7 +61,7 @@ export class SearchConnections extends TypertRemoteService {
     if (connectionId !== undefined && this.store) {
       const model = extractSessionModel(agent, this.ctx)
       if (model?.model) {
-        void this.store.set(model.provider, model.model, connectionId)
+        await this.store.set(model.provider, model.model, connectionId)
       }
     }
     return this.view(agent)
@@ -127,14 +127,8 @@ export function installBridge(ctx: Context, settings: () => ResolvedSettings, op
     async initialize(session, agent) {
       const selections = await runtime.selections()
       const config = settings()
-      return selections.get(session.id, async () => {
-        const parent = session.header.parentSession
-        // Fork current plugin selection once; historical fork-boundary routing is not exported.
-        if (parent && session.header.isSeeded) {
-          const inherited = await selections.get(parent, async () => null, config.freshness)
-          return { connectionId: inherited.connectionId, freshness: inherited.freshness! }
-        }
-        const model = extractSessionModel(agent, ctx)
+      const isFork = Boolean(session.header.parentSession && session.header.isSeeded)
+      const resolveDefault = async (model: { provider?: string; model?: string } | undefined): Promise<string | null> => {
         if (model?.model) {
           const cached = store.get(model.provider, model.model)
           if (cached !== undefined) {
@@ -146,7 +140,29 @@ export function installBridge(ctx: Context, settings: () => ResolvedSettings, op
         if (config.defaultConnection !== undefined) return config.defaultConnection
         const available = (await runtime.describe(agent)).filter(c => c.configured)
         return available.length === 1 ? available[0]!.id : null
+      }
+      const selection = await selections.get(session.id, async () => {
+        const parent = session.header.parentSession
+        // Fork current plugin selection once; historical fork-boundary routing is not exported.
+        if (parent && session.header.isSeeded) {
+          const inherited = await selections.get(parent, async () => null, config.freshness)
+          return { connectionId: inherited.connectionId, freshness: inherited.freshness! }
+        }
+        const model = extractSessionModel(agent, ctx)
+        return resolveDefault(model)
       }, config.freshness)
+
+      if (!isFork && selection.revision === 0 && agent) {
+        const currentModel = extractSessionModel(agent, ctx)
+        if (currentModel?.model) {
+          const expectedDefault = await resolveDefault(currentModel)
+          if (expectedDefault !== selection.connectionId) {
+            return selections.updateDefault(session.id, expectedDefault)
+          }
+        }
+      }
+
+      return selection
     },
   }
   ctx.on('agent/request', async (payload, next) => {

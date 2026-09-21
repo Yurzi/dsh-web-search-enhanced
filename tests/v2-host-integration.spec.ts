@@ -535,5 +535,43 @@ describe('storage activation and snapshot recovery', () => {
       const view = await reopened.invoke('get', { sessionId: 'session-reopen-2' })
       expect(view.selection.connectionId).toBe('custom:b')
     })
+
+    it('automatically updates default connection when model changes in a session with revision === 0', async () => {
+      const h = await host()
+      const base = Session.create(sid('switch-session'))
+      const agent = { id: 'switch-session', ctx: h.ctx, options: { provider: 'test', model: 'model-a' }, session: base } as unknown as Agent
+      h.agents.set('switch-session', agent)
+
+      // Pair model-a with custom:a, and model-b with custom:b
+      await h.bridge.store.set('test', 'model-a', 'custom:a')
+      await h.bridge.store.set('test', 'model-b', 'custom:b')
+
+      // Initial get with model-a -> custom:a
+      const v1 = await h.invoke('get', { sessionId: 'switch-session' })
+      expect(v1.selection.connectionId).toBe('custom:a')
+      expect(v1.selection.revision).toBe(0)
+
+      // Switch agent model to model-b
+      ;(agent as any).options = { provider: 'test', model: 'model-b' }
+
+      // Next get should automatically follow to custom:b!
+      const v2 = await h.invoke('get', { sessionId: 'switch-session' })
+      expect(v2.selection.connectionId).toBe('custom:b')
+      expect(v2.selection.revision).toBe(0)
+
+      // If user explicitly sets custom:a (bumping revision to 1)
+      await h.invoke('set', { sessionId: 'switch-session', connectionId: 'custom:a', expectedRevision: 0 })
+      const v3 = await h.invoke('get', { sessionId: 'switch-session' })
+      expect(v3.selection.revision).toBe(1)
+
+      // Now switch model to model-c (paired with custom:b)
+      await h.bridge.store.set('test', 'model-c', 'custom:b')
+      ;(agent as any).options = { provider: 'test', model: 'model-c' }
+
+      // Since revision === 1, it should NOT be overridden!
+      const v4 = await h.invoke('get', { sessionId: 'switch-session' })
+      expect(v4.selection.connectionId).toBe('custom:a')
+      expect(v4.selection.revision).toBe(1)
+    })
   })
 })

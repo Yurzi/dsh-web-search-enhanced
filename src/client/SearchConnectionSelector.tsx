@@ -16,7 +16,7 @@ export interface SearchConnectionRemote {
   get(request: { sessionId: string }): Promise<RemoteResult<SearchSelectionResponse>>
   set(request: { sessionId: string; connectionId?: string | null; freshness?: Freshness; expectedRevision: number }): Promise<RemoteResult<SearchSelectionResponse>>
 }
-export interface SearchConnectionSelectorProps { sessionId: string; remote: SearchConnectionRemote }
+export interface SearchConnectionSelectorProps { sessionId: string; remote: SearchConnectionRemote; sessions?: unknown }
 
 /** Each effect owns a guard: cancellation also fences responses across sessions/unmount. */
 export function createResponseGuard() {
@@ -39,7 +39,7 @@ export function SearchConnectionSelector(props: SearchConnectionSelectorProps) {
   // A new session must never briefly display or write the previous session's selection.
   return <SessionSelector key={props.sessionId} {...props} />
 }
-function SessionSelector({ sessionId, remote }: SearchConnectionSelectorProps) {
+function SessionSelector({ sessionId, remote, sessions }: SearchConnectionSelectorProps) {
   const [value, setValue] = useState<SearchSelectionResponse>()
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -84,11 +84,25 @@ function SessionSelector({ sessionId, remote }: SearchConnectionSelectorProps) {
     }
     controller.current = { refresh, select }
     void refresh()
-    const timer = window.setInterval(() => { void refresh() }, 5000)
+    const timer = window.setInterval(() => { void refresh() }, 2000)
     const focus = () => { void refresh() }
     window.addEventListener('focus', focus)
     return () => { guard.cancel(); controller.current = undefined; window.clearInterval(timer); window.removeEventListener('focus', focus) }
   }, [sessionId, remote])
+
+  // Subscribe to live model selection changes in the session
+  useEffect(() => {
+    const s = sessions as { binding?: (id: string) => { session?: { projections?: { faceOf?: (key: string) => { subscribe?: (fn: () => void) => () => void } } } } } | undefined
+    try {
+      const face = s?.binding?.(sessionId)?.session?.projections?.faceOf?.('modelSelection')
+      if (face && typeof face.subscribe === 'function') {
+        const unsubscribe = face.subscribe(() => {
+          void controller.current?.refresh(true)
+        })
+        return () => { unsubscribe() }
+      }
+    } catch { /* ignore */ }
+  }, [sessionId, sessions])
   const connections = useMemo(() => discoverableConnections(value?.connections ?? []), [value?.connections])
   useEffect(() => {
     if (!notice) return
@@ -131,6 +145,7 @@ export function SearchSelectorControl({ value, connections, pending, error, noti
     return () => { node.removeEventListener('toggle', sync); window.removeEventListener('resize', close) }
   }, [])
   const toggle = () => {
+    onRefresh()
     const node = panel.current, button = trigger.current
     if (!node || !button) return
     if (node.matches(':popover-open')) { node.hidePopover(); return }
