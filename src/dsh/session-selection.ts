@@ -52,6 +52,15 @@ export class SessionSelections {
       }) }
     })
   }
+  updateDefault(id: string, connectionId: string | null): Promise<Selection> {
+    return this.serial(id, async () => {
+      const stored = this.table.get(id)
+      if (!stored || stored.revision !== 0) return stored ?? { connectionId: null, revision: 0 }
+      if (stored.connectionId === connectionId) return { ...stored }
+      return { ...await this.table.update(id, current => current.revision === 0
+        ? { ...current, connectionId } : current) }
+    })
+  }
   async fork(source: string, target: string, initial: () => Promise<InitialSelection>, defaultFreshness: Freshness = 'auto'): Promise<Selection> {
     const parent = await this.get(source, initial, defaultFreshness)
     return this.get(target, async () => ({ connectionId: parent.connectionId, freshness: parent.freshness! }), defaultFreshness)

@@ -60,8 +60,10 @@ Storage Domain 名称为 `web_search_enhanced`，版本 1，表为 `selections`�
 
 1. 已有记录优先，保留失效连接 ID 和 `null`。
 2. seeded fork 首次初始化时复制父会话当前值；此后独立，不重建历史 fork 边界。
-3. 无记录时使用显式 defaultConnection。
-4. 没有显式默认时，仅有一个本地可用连接才选中，否则为 null。
+3. 无记录时（首次初始化）：
+   a. 优先读取模型配对状态缓存（位于 `$DSH_HOME/cache/web-search-enhanced/model-connections.json`），若存在当前会话模型上一次选择的配对连接（包括明确关闭搜索的 `null`）且连接有效（存在且未禁用），则默认使用该配对连接。
+   b. 若无匹配缓存（新模型或连接已失效），使用配置文件里的显式 `defaultConnection`。
+   c. 没有显式默认时，仅有一个本地可用连接才选中，否则为 `null`。
 
 旧记录缺少 freshness 时，首次读取以当前全局默认原子补入，保留连接和 revision；以后不再跟随默认变化。两项偏好共用一个 revision，set 可单独更新连接、单独更新实时性或同时更新，至少含一项。基于 storage update 的 CAS 拒绝过期 revision，本地串行队列避免重复初始化。
 

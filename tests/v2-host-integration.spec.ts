@@ -89,7 +89,7 @@ async function host(root?: string, mode: 'native' | 'ptc' = 'native', deferStora
     await old.close()
   }
   let settings = resolveSettings(config)
-  const bridge = installBridge(ctx, () => settings)
+  const bridge = installBridge(ctx, () => settings, { cacheDir: join(root, 'cache') })
   await vi.waitFor(() => expect(ctx.get('searchConnections')).toBeDefined())
   if (!deferStorage) await bridge.runtime.selections()
   const invoke = (method: 'get' | 'set', request: Record<string, unknown>) => ctx.typertGateway.invoke({ namespace: 'searchConnections', method, args: { request } }) as Promise<SelectionView>
@@ -445,5 +445,95 @@ describe('storage activation and snapshot recovery', () => {
     expect((await h.execute('one')).isError).toBe(false)
     expect(h.credentials.resolve).toHaveBeenCalledOnce()
     expect(fetcher.mock.calls.at(-1)?.[0]).toBe('https://api.firecrawl.dev/v2/search')
+  })
+
+  describe('model-to-search connection pairing & state cache', () => {
+    it('follows last selected connection for the same model and defaults to config preference for new models', async () => {
+      const h = await host()
+      const createAgentWithModel = (id: string, provider: string, model: string) => {
+        const base = Session.create(sid(id))
+        const agent = { id, ctx: h.ctx, options: { provider, model }, session: base } as unknown as Agent
+        h.agents.set(id, agent)
+        return agent
+      }
+      createAgentWithModel('session-a1', 'deepseek', 'deepseek-chat')
+      createAgentWithModel('session-a2', 'deepseek', 'deepseek-chat')
+      createAgentWithModel('session-b1', 'anthropic', 'claude-3-5-sonnet')
+      createAgentWithModel('session-c1', 'openai', 'gpt-4o')
+
+      // Initial session with deepseek:deepseek-chat (new model) -> config.defaultConnection ('custom:a')
+      const viewA1 = await h.invoke('get', { sessionId: 'session-a1' })
+      expect(viewA1.selection.connectionId).toBe('custom:a')
+      expect(viewA1.selection.revision).toBe(0)
+
+      // User switches search connection for session-a1 (deepseek) to custom:b
+      await h.invoke('set', { sessionId: 'session-a1', connectionId: 'custom:b', expectedRevision: 0 })
+
+      // Now a new session with deepseek:deepseek-chat (session-a2) should automatically default to custom:b!
+      const viewA2 = await h.invoke('get', { sessionId: 'session-a2' })
+      expect(viewA2.selection.connectionId).toBe('custom:b')
+      expect(viewA2.selection.revision).toBe(0)
+
+      // A session with a different, new model (session-b1, claude-3-5-sonnet) should still default to config preference ('custom:a')
+      const viewB1 = await h.invoke('get', { sessionId: 'session-b1' })
+      expect(viewB1.selection.connectionId).toBe('custom:a')
+
+      // User pairs session-b1 with null (disables search)
+      await h.invoke('set', { sessionId: 'session-b1', connectionId: null, expectedRevision: 0 })
+
+      // Next session with claude-3-5-sonnet should default to null
+      createAgentWithModel('session-b2', 'anthropic', 'claude-3-5-sonnet')
+      const viewB2 = await h.invoke('get', { sessionId: 'session-b2' })
+      expect(viewB2.selection.connectionId).toBeNull()
+
+      // Unrelated new model (session-c1) still gets config defaultConnection ('custom:a')
+      const viewC1 = await h.invoke('get', { sessionId: 'session-c1' })
+      expect(viewC1.selection.connectionId).toBe('custom:a')
+    })
+
+    it('falls back to config default when cached connection is disabled or missing', async () => {
+      const h = await host()
+      const base = Session.create(sid('session-m1'))
+      h.agents.set('session-m1', { id: 'session-m1', ctx: h.ctx, options: { provider: 'test', model: 'model-x' }, session: base } as unknown as Agent)
+
+      // Pair model-x with custom:b
+      await h.invoke('get', { sessionId: 'session-m1' })
+      await h.invoke('set', { sessionId: 'session-m1', connectionId: 'custom:b', expectedRevision: 0 })
+
+      // Disable custom:b in settings
+      h.changeSettings({
+        version: 2,
+        defaultConnection: 'custom:a',
+        connections: {
+          'custom:a': { kind: 'structured', label: 'A', adapter: 'exa', credentialRef: 'TEST_A', endpoint: 'https://a.invalid/search', trustedEndpoint: true },
+          'custom:b': { kind: 'structured', label: 'B', disabled: true, adapter: 'exa', credentialRef: 'TEST_B', endpoint: 'https://b.invalid/search', trustedEndpoint: true },
+        },
+      })
+
+      // Next session with model-x should fall back to custom:a because custom:b is disabled
+      const base2 = Session.create(sid('session-m2'))
+      h.agents.set('session-m2', { id: 'session-m2', ctx: h.ctx, options: { provider: 'test', model: 'model-x' }, session: base2 } as unknown as Agent)
+      const viewM2 = await h.invoke('get', { sessionId: 'session-m2' })
+      expect(viewM2.selection.connectionId).toBe('custom:a')
+    })
+
+    it('persists model pairing across host reopens', async () => {
+      const h = await host()
+      const base = Session.create(sid('session-reopen-1'))
+      h.agents.set('session-reopen-1', { id: 'session-reopen-1', ctx: h.ctx, options: { provider: 'p', model: 'persistent-model' }, session: base } as unknown as Agent)
+
+      await h.invoke('get', { sessionId: 'session-reopen-1' })
+      await h.invoke('set', { sessionId: 'session-reopen-1', connectionId: 'custom:b', expectedRevision: 0 })
+
+      // Dispose and reopen host with same root directory
+      await h.ctx.fiber.dispose()
+      const reopened = await host(h.root)
+
+      const base2 = Session.create(sid('session-reopen-2'))
+      reopened.agents.set('session-reopen-2', { id: 'session-reopen-2', ctx: reopened.ctx, options: { provider: 'p', model: 'persistent-model' }, session: base2 } as unknown as Agent)
+
+      const view = await reopened.invoke('get', { sessionId: 'session-reopen-2' })
+      expect(view.selection.connectionId).toBe('custom:b')
+    })
   })
 })

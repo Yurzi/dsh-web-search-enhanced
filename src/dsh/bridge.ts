@@ -10,6 +10,7 @@ import type { ResolvedSettings, FixedBinding } from '../config.ts'
 import { ExecutionContexts, type SearchSnapshot } from './execution-context.ts'
 import { captureFollowSettings, FollowRequest, FollowModelError } from './session-model.ts'
 import { SessionSelections, SelectionConflict } from './session-selection.ts'
+import { extractSessionModel, ModelPairingStore } from './model-pairing-store.ts'
 import { getRequest, setRequest, selectionSchema, type SelectionView } from '../remote-contract.ts'
 import { abortable, executeSearch, FOLLOW_UNAVAILABLE, searchError } from '../search/service.ts'
 import type { FreshnessDiagnostic } from '../search/diagnostics.ts'
@@ -20,10 +21,11 @@ export interface BridgeRuntime {
   selections(): Promise<SessionSelections>
   describe(agent?: Agent): Promise<SelectionView['connections']>
   initialize(session: Agent['session'], agent?: Agent): Promise<SelectionView['selection']>
+  store?: ModelPairingStore
 }
 /** Ordinary-session authorization deliberately delegates to the real Session Controller. */
 export class SearchConnections extends TypertRemoteService {
-  constructor(ctx: Context, private runtime: BridgeRuntime) { super(ctx, 'searchConnections') }
+  constructor(ctx: Context, private runtime: BridgeRuntime, private store?: ModelPairingStore) { super(ctx, 'searchConnections') }
   private async authorized(id: string) {
     const found = await this.ctx.sessionController.resolveAgent(id as Agent['session']['id'])
     if ('error' in found) throw found.error
@@ -56,11 +58,18 @@ export class SearchConnections extends TypertRemoteService {
       if (error instanceof SelectionConflict) throw new RemoteError('gateway/bad-request', error.message, {})
       throw new RemoteError('gateway/internal', 'Search selection could not be persisted', {})
     }
+    if (connectionId !== undefined && this.store) {
+      const model = extractSessionModel(agent, this.ctx)
+      if (model?.model) {
+        void this.store.set(model.provider, model.model, connectionId)
+      }
+    }
     return this.view(agent)
   }
 }
 
-export function installBridge(ctx: Context, settings: () => ResolvedSettings) {
+export function installBridge(ctx: Context, settings: () => ResolvedSettings, options?: { cacheDir?: string; store?: ModelPairingStore }) {
+  const store = options?.store ?? new ModelPairingStore(options?.cacheDir ? { cacheDir: options.cacheDir } : undefined)
   const contexts = new ExecutionContexts()
   const follow = new WeakMap<SearchSnapshot, { request?: FollowRequest; error?: string }>()
   const diagnostics: Readonly<FreshnessDiagnostic & { sessionId: string; connectionId: string | null; step: number }>[] = []
@@ -114,6 +123,7 @@ export function installBridge(ctx: Context, settings: () => ResolvedSettings) {
         return { id: c.id, label: c.label, kind: c.kind, configured, ...(c.keyless ? { keyless: true } : {}), ...(reason ? { reason } : {}), ...(ref ? { credentialRef: ref } : {}) }
       }))
     },
+    store,
     async initialize(session, agent) {
       const selections = await runtime.selections()
       const config = settings()
@@ -123,6 +133,15 @@ export function installBridge(ctx: Context, settings: () => ResolvedSettings) {
         if (parent && session.header.isSeeded) {
           const inherited = await selections.get(parent, async () => null, config.freshness)
           return { connectionId: inherited.connectionId, freshness: inherited.freshness! }
+        }
+        const model = extractSessionModel(agent, ctx)
+        if (model?.model) {
+          const cached = store.get(model.provider, model.model)
+          if (cached !== undefined) {
+            if (cached === null) return null
+            const conn = config.connections[cached]
+            if (conn && !conn.disabled) return cached
+          }
         }
         if (config.defaultConnection !== undefined) return config.defaultConnection
         const available = (await runtime.describe(agent)).filter(c => c.configured)
@@ -166,7 +185,7 @@ export function installBridge(ctx: Context, settings: () => ResolvedSettings) {
   })
   ctx.on('agent/disposed', ({ agent }) => contexts.forget(agent))
   // session/disposed is NOT durable deletion. Never erase persisted selections there.
-  ctx.inject(['sessionController', 'typert'], remoteCtx => { new SearchConnections(remoteCtx, runtime) })
+  ctx.inject(['sessionController', 'typert'], remoteCtx => { new SearchConnections(remoteCtx, runtime, store) })
   ctx.web.registerSearchProvider({
     id: 'enhanced-search', available: () => true,
     async search(request, signal) {
@@ -182,5 +201,5 @@ export function installBridge(ctx: Context, settings: () => ResolvedSettings) {
       })
     },
   })
-  return { contexts, runtime, diagnostics: () => diagnostics.slice() }
+  return { contexts, runtime, diagnostics: () => diagnostics.slice(), store }
 }
