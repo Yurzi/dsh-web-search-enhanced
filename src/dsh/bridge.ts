@@ -100,7 +100,7 @@ export function installBridge(ctx: Context, settings: () => ResolvedSettings) {
         let ref = c.kind === 'structured' ? c.credentialRef : c.binding?.mode === 'fixed' ? c.binding.credentialRef : undefined
         let configured = false, reason: string | undefined
         if (c.disabled) reason = '连接已禁用'
-        else if (c.keyless === true && (c.adapter === 'exa' || c.adapter === 'firecrawl')) configured = true
+        else if (c.kind === 'structured' && c.keyless === true) configured = true
         else if (c.binding?.mode === 'session') {
           try {
             if (!agent) throw new FollowModelError('需要当前会话模型才能判断可用性')

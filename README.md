@@ -14,15 +14,18 @@
 | --- | --- | --- | --- |
 | Exa | 免 Key / 官方 MCP | EXA_API_KEY | 无需登录，有公共限额 |
 | Firecrawl | 免 Key / 官方 Search REST | FIRECRAWL_API_KEY | 受 IP 和公共额度限制 |
-| Tavily | 个人 API Key | TAVILY_API_KEY | 缺 Key 时不可执行 |
-| Tinyfish | 个人 API Key | TINYFISH_API_KEY | Search 免费不等于匿名 |
+| Tavily | 免 Key / 官方 Search REST | TAVILY_API_KEY | 无需账号，有公共限额 |
+| Tinyfish | 免 Key / 官方 MCP | TINYFISH_API_KEY | 匿名 search 工具，受限参数与额度 |
 | 跟随会话模型 | 当前 Session 的模型连接 | provider 的 apiKeyEnv | 不重复保存模型或 Key |
 
-Exa / Firecrawl 的“免 Key / 个人 API Key”是**显式选择**。保存 Key 不会切换访问方式，限流或失败也不会偷偷换 Key 或服务。
+四种内置服务的“免 Key / 个人 API Key”是**显式选择**。保存 Key 不会切换访问方式，限流或失败也不会偷偷换 Key 或服务。
 
 - Exa 免 Key 调用 https://mcp.exa.ai/mcp 。
 - Firecrawl 两种模式均调用 https://api.firecrawl.dev/v2/search ，匿名模式不发送 Authorization。
-- 本轮 Exa 真实匿名查询成功；Firecrawl 从当前出口 IP 返回 403、拒绝匿名访问。插件给出提示，不绕过上游限制。
+- Tavily 免 Key 调用 https://api.tavily.com/search ，只发送 `X-Tavily-Access-Mode: keyless`，不发送 Authorization。
+- Tinyfish 免 Key 调用 https://agent.tinyfish.ai/mcp 的 `search` 工具，发送 `X-TinyFish-Access-Mode: keyless`，不发送 X-API-Key；个人 Key 模式仍使用原 Search REST。
+- Tavily 与 Tinyfish 均已在本环境真实匿名查询成功；此前 Exa 成功，Firecrawl 返回 IP 限制 403。成功不保证未来额度或可用性，插件不绕过上游限制。
+- 升级后未显式设置 `access` 的 Tavily/Tinyfish 默认免 Key；已设置 `api-key` 的连接保持原模式，已有凭据不删除，会话选择不变。Tinyfish 旧配置若使用 `research_paper`，请显式设置 `access: api-key`。
 - “已配置 / 免 Key”表示本地条件满足，不代表权限、额度或网络健康验证。打开设置不探测供应商。
 
 ## 界面预览
@@ -53,7 +56,7 @@ Exa / Firecrawl 的“免 Key / 个人 API Key”是**显式选择**。保存 Ke
 
 内联抓取可能增加延迟和额度消耗，参数不保证网页可抓取或真正实时。私有诊断记录 default/applied/ignored/partial，不扩展宿主结果或 Session 事件。
 
-Exa 免 Key 首期仅支持 query 和数量，高级 options 需切换个人 API Key。Firecrawl 两种模式共用受限 options。
+Exa 免 Key 首期仅支持 query 和数量，高级 options 需切换个人 API Key。Firecrawl、Tavily 两种模式共用受限 options。Tinyfish 免 Key 查询最多 2000 字符，支持 location/language/purpose，domain_type 仅 web/news；research_paper 需个人 Key。结果数量在本地裁剪，不自动翻页。
 
 ## 跟随会话模型
 
@@ -101,7 +104,7 @@ web-search-enhanced:
 - **存储暂不可用**：等待 Cordis storage-domain 激活；打开失败后可重试，不终身缓存拒绝。恢复后同一 step 可重建失败快照。
 - **旧配置需要迁移**：到设置中导入，而不是提示所有连接不可用。
 - **配置解析失败**：修正设置后发起新模型请求。
-- **Firecrawl 拒绝匿名访问**：显式切换个人 API Key，或手动选择其他连接。
+- **服务拒绝匿名访问（401/403）**：显式切换个人 API Key，或手动选择其他连接。
 
 必须使用 DSH Storage Domain 持久后端，不悄悄退化为 localStorage/内存。搜索配置错误不阻断普通聊天。
 

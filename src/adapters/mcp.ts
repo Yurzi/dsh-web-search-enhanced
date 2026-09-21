@@ -1,5 +1,6 @@
 import { WebError } from '@deepseek-ai/dsh-web'
 import type { WebSearchRequest, WebSearchResult, WebSearchSource } from '@deepseek-ai/dsh-web'
+import { validateStructuredOptions } from './structured.ts'
 
 const MAX_BYTES = 2 * 1024 * 1024
 const TIMEOUT_MS = 90_000
@@ -71,7 +72,7 @@ async function readResult(response: Response, id: number, signal: AbortSignal): 
   }
 }
 
-async function call(url: string, tool: string, args: Record<string, unknown>, signal: AbortSignal | undefined, fetcher: typeof fetch): Promise<any> {
+async function call(url: string, tool: string, args: Record<string, unknown>, signal: AbortSignal | undefined, fetcher: typeof fetch, tinyfish = false): Promise<any> {
   const controller = new AbortController()
   const abort = () => controller.abort()
   signal?.addEventListener('abort', abort, { once: true })
@@ -82,6 +83,7 @@ async function call(url: string, tool: string, args: Record<string, unknown>, si
     const pending = fetcher(url, {
       method: 'POST', redirect: 'error', signal: controller.signal,
       headers: { accept: 'application/json, text/event-stream', 'content-type': 'application/json',
+        ...(tinyfish ? { 'X-TinyFish-Access-Mode': 'keyless' } : {}),
         ...(session ? { 'Mcp-Session-Id': session } : {}), ...(protocol ? { 'MCP-Protocol-Version': protocol } : {}) },
       body: JSON.stringify(body),
     })
@@ -90,7 +92,7 @@ async function call(url: string, tool: string, args: Record<string, unknown>, si
     const response = await untilAbort(pending, controller.signal)
     if (!response.ok) {
       void response.body?.cancel().catch(() => {})
-      throw fail('keyless search HTTP ' + response.status, response.status === 429 ? 'WEB_PROVIDER_RATE_LIMITED' : 'WEB_PROVIDER_ERROR')
+      throw fail('keyless search HTTP ' + response.status, response.status === 429 ? 'WEB_PROVIDER_RATE_LIMITED' : response.status === 401 || response.status === 403 ? 'WEB_KEYLESS_UNAVAILABLE' : 'WEB_PROVIDER_ERROR')
     }
     if (body.id === undefined) {
       void response.body?.cancel().catch(() => {})
@@ -99,6 +101,12 @@ async function call(url: string, tool: string, args: Record<string, unknown>, si
     return { response, value: await readResult(response, body.id as number, controller.signal) }
   }
   try {
+    // Tinyfish's public keyless route uses a stateless tools/call (OpenCode v2).
+    if (tinyfish) {
+      const result = await post({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: tool, arguments: args } })
+      if (result.value.isError) throw fail('keyless search tool failed')
+      return result.value
+    }
     // Session state never escapes this operation. No retries on protocol/tool errors.
     const init = await post({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {
       protocolVersion: PROTOCOL, capabilities: {}, clientInfo: { name: 'dsh-web-search-enhanced', version: '0.0.6' },
@@ -112,6 +120,7 @@ async function call(url: string, tool: string, args: Record<string, unknown>, si
   } catch (error) {
     // Never propagate provider bodies, JSON parser input, fetch errors or their causes.
     if (controller.signal.aborted) throw aborted()
+    if (error instanceof WebError && error.code === 'WEB_KEYLESS_UNAVAILABLE') throw fail('所选服务拒绝免 Key 访问；请显式切换个人 API Key 或选择其他连接', 'WEB_KEYLESS_UNAVAILABLE')
     if (error instanceof WebError && error.code === 'WEB_PROVIDER_RATE_LIMITED') throw fail('keyless search rate limited', 'WEB_PROVIDER_RATE_LIMITED')
     throw fail('keyless search transport or MCP failure')
   } finally {
@@ -139,7 +148,7 @@ function exaRows(value: string): any[] {
     return [{ url, title: field('Title'), publishedAt: field('Published(?: Date)?'), snippet }]
   })
 }
-function sources(value: any, adapter: 'exa' | 'firecrawl'): WebSearchSource[] {
+function sources(value: any, adapter: 'exa' | 'firecrawl' | 'tinyfish'): WebSearchSource[] {
   let candidates = rows(value.structuredContent) ?? rows(value)
   if (!candidates) {
     let recognized = false
@@ -170,14 +179,20 @@ function sources(value: any, adapter: 'exa' | 'firecrawl'): WebSearchSource[] {
   })
 }
 
-export async function searchKeyless(adapter: 'exa' | 'firecrawl', request: WebSearchRequest, signal?: AbortSignal, fetcher: typeof fetch = fetch): Promise<WebSearchResult> {
+export async function searchKeyless(adapter: 'exa' | 'firecrawl' | 'tinyfish', request: WebSearchRequest, signal?: AbortSignal, fetcher: typeof fetch = fetch, options: Record<string, unknown> = {}): Promise<WebSearchResult> {
   if (signal?.aborted) throw aborted()
-  if (typeof request.query !== 'string' || !request.query.trim() || request.query.length > 10_000) throw fail('invalid search query')
+  if (typeof request.query !== 'string' || !request.query.trim() || request.query.length > (adapter === 'tinyfish' ? 2000 : 10_000)) throw fail('invalid search query')
   if (request.maxResults !== undefined && (!Number.isSafeInteger(request.maxResults) || request.maxResults < 0)) throw fail('invalid result limit')
+  if (adapter === 'tinyfish' && options.domain_type === 'research_paper') throw fail('Tinyfish keyless supports web/news only; use API Key mode for research_paper')
   if (request.maxResults === 0) return { sources: [], truncated: false }
-  // Options and freshness preferences are deliberately not forwarded by keyless adapters.
-  const args = { query: request.query, ...(request.maxResults === undefined ? {} : { [adapter === 'exa' ? 'numResults' : 'limit']: Math.min(request.maxResults, 100) }) }
-  const result = await call(adapter === 'exa' ? 'https://mcp.exa.ai/mcp' : 'https://mcp.firecrawl.dev/v2/mcp', adapter === 'exa' ? 'web_search_exa' : 'firecrawl_search', args, signal, fetcher)
+  // Tinyfish's search tool supports the same scoped search options, but no count parameter.
+  // Apply maxResults locally; never invent content freshness controls.
+  const args = adapter === 'tinyfish'
+    ? { ...validateStructuredOptions('tinyfish', options), query: request.query }
+    : { query: request.query, ...(request.maxResults === undefined ? {} : { [adapter === 'exa' ? 'numResults' : 'limit']: Math.min(request.maxResults, 100) }) }
+  const routes = { exa: ['https://mcp.exa.ai/mcp', 'web_search_exa'], firecrawl: ['https://mcp.firecrawl.dev/v2/mcp', 'firecrawl_search'], tinyfish: ['https://agent.tinyfish.ai/mcp', 'search'] } as const
+  const [url, tool] = routes[adapter]
+  const result = await call(url, tool, args, signal, fetcher, adapter === 'tinyfish')
   const list = sources(result, adapter), limit = request.maxResults ?? list.length
   return { sources: list.slice(0, limit), truncated: list.length > limit }
 }

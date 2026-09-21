@@ -15,6 +15,37 @@ function fixture(final: () => Response = () => rpc({ structuredContent: { result
 }
 
 describe('keyless MCP search', () => {
+  it.each(['json','sse'])('Tinyfish uses a single anonymous search call and parses %s text JSON',async format=>{
+    const envelope={jsonrpc:'2.0',id:1,result:{content:[{type:'text',text:JSON.stringify({results:[example,{...example,url:'https://example.com/2'}],page:0,total_results:2})}]}}
+    const fetcher=vi.fn<typeof fetch>(async()=>format==='json'?json(envelope):new Response('data: '+JSON.stringify(envelope)+'\n\n',{headers:{'content-type':'text/event-stream'}}))
+    const result=await searchKeyless('tinyfish',{query:'hello',maxResults:1},undefined,fetcher,{location:'US',language:'en',purpose:'research',domain_type:'web'})
+    expect(result).toEqual({sources:[example],truncated:true})
+    expect(fetcher).toHaveBeenCalledOnce()
+    const [url,init]=fetcher.mock.calls[0]!, headers=new Headers(init?.headers)
+    expect(url).toBe('https://agent.tinyfish.ai/mcp');expect(init?.redirect).toBe('error')
+    expect(headers.get('x-tinyfish-access-mode')).toBe('keyless')
+    for(const name of ['authorization','x-api-key','cookie','mcp-session-id']) expect(headers.has(name)).toBe(false)
+    expect(JSON.parse(String(init?.body))).toEqual({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'search',arguments:{query:'hello',location:'US',language:'en',purpose:'research',domain_type:'web'}}})
+  })
+  it('Tinyfish validates options, skips zero count, and honors cancellation',async()=>{
+    const fetcher=vi.fn<typeof fetch>(()=>new Promise(()=>{}))
+    await expect(searchKeyless('tinyfish',{query:'q'},undefined,fetcher,{headers:{}})).rejects.toThrow()
+    expect(await searchKeyless('tinyfish',{query:'q',maxResults:0},undefined,fetcher)).toEqual({sources:[],truncated:false})
+    await expect(searchKeyless('tinyfish',{query:'q'},undefined,fetcher,{domain_type:'research_paper'})).rejects.toThrow('API Key mode')
+    await expect(searchKeyless('tinyfish',{query:'x'.repeat(2001)},undefined,fetcher)).rejects.toThrow('invalid search query')
+    expect(fetcher).not.toHaveBeenCalled()
+    const controller=new AbortController()
+    const pending=searchKeyless('tinyfish',{query:'q'},controller.signal,fetcher)
+    controller.abort('private reason')
+    await expect(pending).rejects.toMatchObject({code:'WEB_ABORTED'})
+    expect(fetcher).toHaveBeenCalledOnce()
+  })
+  it.each([{isError:true,content:[{type:'text',text:'secret'}]}, {content:[{type:'text',text:'secret'}]}])('Tinyfish rejects tool failures and unknown formats without fallback',async result=>{
+    const fetcher=vi.fn<typeof fetch>(async()=>rpc(result,1))
+    const error=await searchKeyless('tinyfish',{query:'hello'},undefined,fetcher).catch(e=>e)
+    expect(error).toBeInstanceOf(Error);expect(error.message).not.toContain('secret')
+    expect(fetcher).toHaveBeenCalledOnce()
+  })
   it.each([
     ['exa', 'https://mcp.exa.ai/mcp', 'web_search_exa', 'numResults'],
     ['firecrawl', 'https://mcp.firecrawl.dev/v2/mcp', 'firecrawl_search', 'limit'],

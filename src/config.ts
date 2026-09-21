@@ -77,7 +77,7 @@ export function resolveSettings(config: V2Config = {}): ResolvedSettings {
       if (c.credentialRef !== undefined) builtin.credentialRef = reference(c.credentialRef)
       if (c.access !== undefined) {
         if (c.access !== 'keyless' && c.access !== 'api-key') throw new Error('invalid access mode')
-        if (c.access === 'keyless' && id !== 'builtin:exa' && id !== 'builtin:firecrawl') throw new Error('this connection requires an API key')
+        if (c.access === 'keyless' && !Object.values(CATALOG).some(p => p.adapter === builtin.adapter && 'keyless' in p && p.keyless)) throw new Error('this connection requires an API key')
         builtin.access = c.access
         builtin.keyless = c.access === 'keyless'
       }
@@ -108,6 +108,7 @@ export function resolveSettings(config: V2Config = {}): ResolvedSettings {
   for (const c of Object.values(connections)) {
     if (c.kind === 'structured') {
       c.options = validateStructuredOptions(c.adapter!, c.options)
+      if (c.keyless && c.adapter === 'tinyfish' && c.options.domain_type === 'research_paper') throw new Error('Tinyfish keyless supports web/news only; use API Key mode for research_paper')
       if (c.keyless && c.adapter === 'exa' && Object.keys(c.options).length) throw new Error('keyless currently supports query and count only; use API Key mode for advanced options')
     }
   }

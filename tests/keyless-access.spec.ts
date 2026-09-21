@@ -8,12 +8,58 @@ function snapshot(id: string, access?: string) {
   return new ExecutionContexts().capture({},'s',1,1,{connectionId:id,revision:0},settings)
 }
 describe('explicit keyless and personal API modes',()=>{
-  it('defaults only Exa and Firecrawl to keyless and rejects unknown access modes',()=>{
+  it('Tavily keyless sends only its access-mode header and preserves search options',async()=>{
+    const credentials=vi.fn(async()=> 'must-not-read')
+    const fetcher=vi.fn<typeof fetch>(async()=>Response.json({results:[{url:'https://example.org',title:'Example',content:'evidence'}]}))
+    const settings=resolveSettings({connections:{'builtin:tavily':{options:{search_depth:'advanced',topic:'news'}}}})
+    const s=new ExecutionContexts().capture({},'s',1,1,{connectionId:'builtin:tavily',revision:0},settings)
+    const diagnose=vi.fn()
+    const result=await executeSearch(s,{query:'public',maxResults:3},credentials,undefined,undefined,fetcher,diagnose)
+    expect(result.sources[0]?.snippet).toBe('evidence')
+    expect(fetcher.mock.calls[0]?.[0]).toBe('https://api.tavily.com/search')
+    const init=fetcher.mock.calls[0]?.[1], headers=new Headers(init?.headers)
+    expect(headers.get('x-tavily-access-mode')).toBe('keyless')
+    expect(headers.has('authorization')).toBe(false);expect(headers.has('x-api-key')).toBe(false)
+    expect(JSON.parse(String(init?.body))).toMatchObject({query:'public',max_results:3,search_depth:'advanced',topic:'news',include_answer:false,include_raw_content:false})
+    expect(credentials).not.toHaveBeenCalled();expect(fetcher).toHaveBeenCalledOnce()
+  })
+  it.each(['tavily','tinyfish'] as const)('%s personal mode uses Credentials and never sends keyless headers',async adapter=>{
+    const credentials=vi.fn(async()=> 'fixture-key')
+    const fetcher=vi.fn<typeof fetch>(async()=>Response.json({results:[]}))
+    await executeSearch(snapshot('builtin:'+adapter,'api-key'),{query:'public'},credentials,undefined,undefined,fetcher)
+    const [url,init]=fetcher.mock.calls[0]!, headers=new Headers(init?.headers)
+    expect(String(url)).toContain(adapter==='tavily'?'https://api.tavily.com/search':'https://api.search.tinyfish.ai/')
+    expect(headers.get(adapter==='tavily'?'authorization':'x-api-key')).toBe(adapter==='tavily'?'Bearer fixture-key':'fixture-key')
+    expect(headers.has('x-tavily-access-mode')).toBe(false);expect(headers.has('x-tinyfish-access-mode')).toBe(false)
+    expect(credentials).toHaveBeenCalledWith(adapter==='tavily'?'TAVILY_API_KEY':'TINYFISH_API_KEY')
+  })
+  it.each(['tavily','tinyfish'] as const)('%s keyless failures never read a personal key or retry',async adapter=>{
+    for(const status of [401,403,429,500]) {
+      const credentials=vi.fn(async()=> 'paid-secret')
+      const fetcher=vi.fn<typeof fetch>(async()=>new Response('private upstream body',{status}))
+      const error=await executeSearch(snapshot('builtin:'+adapter),{query:'private query'},credentials,undefined,undefined,fetcher).catch(e=>e)
+      expect(error).toBeInstanceOf(Error);expect(error.message).not.toMatch(/private|paid-secret/)
+      if(status===429) expect(error.code).toBe('WEB_PROVIDER_RATE_LIMITED')
+      if(status===401 || status===403) expect(error.code).toBe('WEB_KEYLESS_UNAVAILABLE')
+      expect(credentials).not.toHaveBeenCalled();expect(fetcher).toHaveBeenCalledOnce()
+    }
+  })
+  it('rejects keyless REST with a personal key, including Tinyfish REST',async()=>{
+    const fetcher=vi.fn<typeof fetch>()
+    for(const [adapter,endpoint] of [['tavily','https://api.tavily.com/search'],['tinyfish','https://api.search.tinyfish.ai']] as const) {
+      await expect(searchStructured(adapter,{query:'q'},{endpoint},{freshness:'auto',keyless:true,apiKey:'secret',fetcher})).rejects.toThrow()
+    }
+    await expect(searchStructured('tinyfish',{query:'q'},{endpoint:'https://api.search.tinyfish.ai'},{freshness:'auto',keyless:true,fetcher})).rejects.toThrow()
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+  it('defaults supported builtins to keyless and rejects unknown access modes',()=>{
     const settings=resolveSettings()
     expect(settings.connections['builtin:exa']?.keyless).toBe(true)
     expect(settings.connections['builtin:firecrawl']?.keyless).toBe(true)
-    expect(settings.connections['builtin:tinyfish']?.keyless).toBe(false)
-    expect(()=>resolveSettings({connections:{'builtin:tavily':{access:'keyless'}}})).toThrow()
+    expect(settings.connections['builtin:tinyfish']?.keyless).toBe(true)
+    expect(settings.connections['builtin:tavily']?.keyless).toBe(true)
+    expect(()=>resolveSettings({connections:{'builtin:tinyfish':{options:{domain_type:'research_paper'}}}})).toThrow('API Key mode')
+    expect(()=>resolveSettings({connections:{'builtin:tinyfish':{access:'api-key',options:{domain_type:'research_paper'}}}})).not.toThrow()
     expect(()=>resolveSettings({connections:{'builtin:exa':{access:'auto'}}})).toThrow()
   })
   it('keyless Firecrawl uses official REST, no Credentials, and safe response normalization',async()=>{

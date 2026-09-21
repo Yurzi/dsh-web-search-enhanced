@@ -31,18 +31,18 @@ export async function executeSearch(
   if (!c || c.disabled) throw searchError('所选连接已删除或禁用，请修复或重新选择', 'WEB_SEARCH_CONNECTION_INVALID')
   const route = c.binding?.mode === 'fixed' ? c.binding : binding
   if (c.kind === 'model' && !route) throw searchError(FOLLOW_UNAVAILABLE, 'WEB_SEARCH_FOLLOW_UNSUPPORTED')
-  const keyless = c.kind === 'structured' && c.keyless === true && (c.adapter === 'exa' || c.adapter === 'firecrawl')
+  const keyless = c.kind === 'structured' && c.keyless === true
   const ref = c.kind === 'structured' ? c.credentialRef : route!.credentialRef
   let key: string | undefined
   if (keyless) {
-    if (c.adapter === 'firecrawl') {
-      try { return await searchStructured('firecrawl', request, { endpoint: c.endpoint!, options: c.options }, { freshness: snapshot.freshness, keyless: true, ...(signal ? { signal } : {}), fetcher, ...(diagnose ? { diagnose } : {}) }) }
+    if (c.adapter !== 'exa' && c.adapter !== 'tinyfish') {
+      try { return await searchStructured(c.adapter!, request, { endpoint: c.endpoint!, options: c.options }, { freshness: snapshot.freshness, keyless: true, ...(signal ? { signal } : {}), fetcher, ...(diagnose ? { diagnose } : {}) }) }
       catch (error) {
-        if ((error as { code?: string })?.code === 'WEB_PROVIDER_AUTH_ERROR') throw searchError('Firecrawl 拒绝当前网络的免 Key 访问；请显式切换个人 API Key 或选择其他连接', 'WEB_KEYLESS_UNAVAILABLE')
+        if ((error as { code?: string })?.code === 'WEB_PROVIDER_AUTH_ERROR') throw searchError(c.adapter + ' 拒绝当前网络的免 Key 访问；请显式切换个人 API Key 或选择其他连接', 'WEB_KEYLESS_UNAVAILABLE')
         throw error
       }
     }
-    const result = await searchKeyless('exa', request, signal, fetcher)
+    const result = await searchKeyless(c.adapter, request, signal, fetcher, c.options)
     diagnose?.(freshnessDiagnostic(snapshot.freshness, false, result.sources.map(s => s.snippet)))
     return result
   }

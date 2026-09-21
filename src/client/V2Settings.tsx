@@ -246,12 +246,12 @@ export function V2Settings({ scope, credentials }: V2SettingsProps) {
           <div className="v2s-section">
             <div className="v2s-section-head">
               <h4 className="v2s-section-title">内置结构化连接</h4>
-              <span className="v2s-section-desc">Exa 与 Firecrawl 支持免 Key；配置 Key 可使用各自 API 额度</span>
+              <span className="v2s-section-desc">四种内置服务均支持免 Key；个人 API Key 需显式切换</span>
             </div>
             <div className="v2s-list">
               {Object.entries(CATALOG).map(([id, c]) => {
                 const ref = refFor(id, c.credentialRef)
-                const supportsKeyless = id === 'builtin:exa' || id === 'builtin:firecrawl'
+                const supportsKeyless = 'keyless' in c && c.keyless === true
                 const keyless = supportsKeyless && config.connections?.[id]?.access !== 'api-key'
                 const configured = keyless || states[ref]?.configured === true
                 const isDisabled = config.connections?.[id]?.disabled === true
@@ -268,7 +268,7 @@ export function V2Settings({ scope, credentials }: V2SettingsProps) {
                         <div className="v2s-row-meta">
                           <span>{keyless ? '免 Key · 公共限额（受网络限制）' : configured ? '已配置凭据' : '未配置凭据'}</span>
                           <span>·</span>
-                          {!keyless ? <span>凭据引用: <code>{ref}</code></span> : <span>{c.adapter === 'exa' ? 'Exa MCP' : 'Firecrawl Search API'}</span>}
+                          {!keyless ? <span>凭据引用: <code>{ref}</code></span> : <span>{c.adapter === 'exa' || c.adapter === 'tinyfish' ? c.label + ' MCP' : c.label + ' Search API'}</span>}
                         </div>
                       </div>
                     </div>

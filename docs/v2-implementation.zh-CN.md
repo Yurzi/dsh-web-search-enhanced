@@ -3,7 +3,7 @@
 ## 当前验证
 
 - TypeScript 全项目检查通过。
-- Vitest：18 个文件、226 项测试通过。
+- Vitest：18 个文件、239 项测试通过（新增 Tavily/Tinyfish keyless 回归）。
 - 工作区开发依赖已对齐 DSH 0.1.5-rc.2 / Cordis 4.0.2，pnpm peers check 无冲突；没有修改宿主依赖。
 - 实际 React 设置组件经 Chromium 隔离渲染，已检查桌面、深色和 390px 窄屏；窄屏说明挤压问题已修复。图片在 assets/，生成器为 scripts/preview-ui.mjs。
 - 搜索选择器通过 `node scripts/check-selector-ui.mjs --screenshots` 的隔离 Chromium 检查：桌面、390px 窄屏、深色各 14 项交互检查，并通过 CDP 核对展开面板实际尺寸和位置。测试使用模拟 Remote，不接触运行中会话；预览位于 assets/search-picker-*.png。
@@ -14,9 +14,9 @@
 
 | 测试 | 关键覆盖 |
 | --- | --- |
-| tests/mcp.spec.ts（29 项） | 握手、JSON/SSE、ID、多行与分块、超时/取消、响应上限、空结果/坏格式、无重试、脱敏 |
-| tests/keyless-access.spec.ts（6 项） | 显式访问方式、匿名 REST 地址限制、不读取 Key、403 提示、限流不回退、实时性 |
-| tests/v2-host-integration.spec.ts（17 项） | 真实 Cordis/Storage/Session/工具/PTC 服务链、会话实时性隔离、旧 schema 重开、跨字段 CAS、冻结请求、重启、fork、取消、晚挂载和拒绝后重试 |
+| tests/mcp.spec.ts（34 项） | 握手、JSON/SSE、ID、多行与分块、超时/取消、响应上限、空结果/坏格式、无重试、脱敏 |
+| tests/keyless-access.spec.ts（12 项） | 显式访问方式、匿名 REST 地址限制、不读取 Key、403 提示、限流不回退、实时性 |
+| tests/v2-host-integration.spec.ts（19 项） | 真实 Cordis/Storage/Session/工具/PTC 服务链、会话实时性隔离、旧 schema 重开、跨字段 CAS、冻结请求、重启、fork、取消、晚挂载和拒绝后重试 |
 | tests/session-selection.spec.ts（7 项） | 一次性默认值补全、会话隔离、连接切换保留实时性、原子保存与分叉 |
 | tests/client-injection.spec.ts（2 项） | 真实 Cordis 缺失注入错误复现、选择器 Remote 注入与生命周期 |
 | tests/selector-render.spec.ts（4 项） | 紧凑菜单、会话实时性、隐藏不可用连接和空分组、不展示配置说明与凭据、错误反馈 |
@@ -24,7 +24,17 @@
 | tests/settings-render.spec.ts（2 项） | 实际组件 SSR、可访问标签、访问方式、只读态、不触发供应商网络 |
 | 其余配置/客户端/协议/插件测试 | 稀疏写入、revision 冲突、迁移、固定模型和结构化协议、包契约 |
 
-## 真实匿名网络验证
+## Tavily / Tinyfish keyless 增量验证
+
+- OpenCode 实现在 **v2 分支**，不是默认 dev。参考已合并 [PR #48561](https://github.com/anomalyco/opencode/pull/48561) 与固定提交 [8aebed170a14d3e3d841883dd2d3d171529d745c 的 Tinyfish 实现](https://github.com/anomalyco/opencode/blob/8aebed170a14d3e3d841883dd2d3d171529d745c/packages/core/src/plugin/websearch/tinyfish.ts#L56-L67)。
+- Tinyfish 免 Key 是 POST https://agent.tinyfish.ai/mcp，头 X-TinyFish-Access-Mode: keyless，直接单次 tools/call 调用 search，无需 initialize。不是取消 REST 的 X-API-Key，也不是借用 OpenCode 密钥或伪装其客户端身份。
+- Tinyfish 匿名 search 一次公开词 Python official documentation 查询返回 HTTP 200、7 条结果；匿名 tools/list 也成功。生产 schema 明确描述匿名工具为受限搜索，query 1–2000 字符、domain_type 仅 web/news。location/language/purpose 可用；通用 MCP 文档中的 research_paper 不属于匿名 schema。
+- Tavily 依据[官方 keyless 文档](https://docs.tavily.com/documentation/keyless.md)，POST /search 加 X-Tavily-Access-Mode: keyless，不发送 Bearer。成功结果与个人 Key 相同格式。
+- 随后直接执行本插件 resolveSettings → ExecutionContexts → executeSearch，对两服务使用公开词 DeepSeek Harness documentation、maxResults=2，凭据 resolver 设置为一旦被调用就抛错。**两者均成功返回 2 条来源**；Tinyfish 本地裁剪并标记 truncated=true，Tavily truncated=false。未修改当前会话的搜索选择。
+- 新增测试覆盖默认可用性、请求头互斥、JSON/SSE、选项/长度限制、取消、HTTP/工具失败脱敏、无重试/付费回退，以及真实宿主中访问方式的请求冻结。
+- 本轮类型检查、239 项测试、生产构建、包检查通过。没有重启、重新安装或宣称运行中 GUI 已更新；启用服务端变更需重载插件后刷新页面。旧 UI 预览来自前轮，不代表新增服务状态截图。
+
+## 先前 Exa / Firecrawl 真实匿名网络验证
 
 只发送公开测试词“DeepSeek Harness documentation”，maxResults=2，不发送任何 Key 或用户私有内容。
 

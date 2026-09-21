@@ -6,7 +6,7 @@
 
 - src/catalog.ts：稳定内置 ID、标签、官方 API 地址、凭据引用以及 keyless 能力。
 - src/config.ts：稀疏覆盖和严格校验。内置结构化连接不可改 kind/adapter/endpoint；自定义地址需信任标记。
-- Exa / Firecrawl 默认 access=keyless，可显式设置 api-key。自定义服务、Tavily、Tinyfish 不开放匿名捷径。
+- 四种内置结构化服务默认 access=keyless，可显式设置 api-key；自定义服务不开放匿名路径。Tavily/Tinyfish 未设置 access 的旧配置随目录升级为免 Key，显式 api-key 保留。Tinyfish keyless 不支持 research_paper，配置时明确拒绝并提示切换个人 Key。
 - Settings 只保存配置差异与凭据引用。Key 只由 DSH Credentials 管理，不进入快照或浏览器 settings。
 - 安装补丁明确指定新会话默认 Exa；目录本身不按遍历顺序决定选择。
 
@@ -37,15 +37,17 @@ src/search/service.ts 根据冻结连接分派，不做跨连接 fallback。
 | --- | --- | --- |
 | Exa 免 Key | 官方 Streamable HTTP MCP / web_search_exa | 不读取 Credentials |
 | Firecrawl 免 Key | 官方 /v2/search REST | 不读取 Credentials，不发 Authorization |
+| Tavily 免 Key | 官方 /search REST | 仅 X-Tavily-Access-Mode: keyless |
+| Tinyfish 免 Key | 官方 agent.tinyfish.ai/mcp / search | 仅 X-TinyFish-Access-Mode: keyless |
 | 四种结构化服务个人 Key | 各自官方 REST | 显式引用 → Credentials |
 | 固定搜索模型 | 三种协议 adapter | 固定 binding 的引用 |
 | 跟随会话模型 | 同上 | Session provider 的显式 apiKeyEnv |
 
-MCP 模块是插件私有传输，当前生产路由只由 Exa 使用；它也包含受测的 Firecrawl MCP 格式解析，Firecrawl 正式路由仍固定为 REST，不把二者当作失败重试通道。
+MCP 模块是插件私有传输，当前生产路由由 Exa 与 Tinyfish 使用；它也包含受测的 Firecrawl MCP 格式解析，Firecrawl 正式路由仍固定为 REST，不把二者当作失败重试通道。
 
 ### MCP 边界
 
-src/adapters/mcp.ts：每次操作独立 initialize → notifications/initialized → tools/call。无跨 Session 的 MCP 缓存，无隐藏重试。传输支持 JSON 和 SSE、多行 data、分块 UTF-8、逐事件/批次匹配 JSON-RPC ID；匹配结果后取消流，无需等待永不结束的 SSE EOF。
+src/adapters/mcp.ts：Exa 每次操作独立 initialize → notifications/initialized → tools/call；Tinyfish 按 OpenCode v2 与实测协议直接单次 tools/call，无初始化握手。无跨 Session 的 MCP 缓存，无隐藏重试。传输支持 JSON 和 SSE、多行 data、分块 UTF-8、逐事件/批次匹配 JSON-RPC ID；匹配结果后取消流，无需等待永不结束的 SSE EOF。
 
 90 秒操作期限、2 MiB 响应上限、拒绝重定向；即使注入 fetcher/read 不响应取消，也会终止等待。错误不透出上游 body、parser 输入或 cause。源 URL 排除非 HTTP(S)、内嵌认证、控制字符和重复项，并限制字段长度。未知结果格式不得伪装为成功空结果。
 
@@ -53,7 +55,7 @@ Exa 文本的 Title/URL/Published Date/Text/Highlights 及结构化内容统一�
 
 ### 认证与计费边界
 
-access 是明确选择，不根据“发现有 Key”猜测。匿名限流/拒绝后不读取个人 Key，个人 Key 失败也不转匿名或另一服务。Firecrawl 匿名 401/403 被解释为 WEB_KEYLESS_UNAVAILABLE；HTTP 429 保留限流分类。
+access 是明确选择，不根据“发现有 Key”猜测。匿名限流/拒绝后不读取个人 Key，个人 Key 失败也不转匿名或另一服务。匿名 HTTP 401/403 被解释为 WEB_KEYLESS_UNAVAILABLE；HTTP 429 保留限流分类。
 
 ## 4. 模型绑定
 

@@ -377,6 +377,25 @@ describe('follow-session model through installed DSH tools and remotes', () => {
 })
 
 describe('storage activation and snapshot recovery', () => {
+  it.each(['tavily','tinyfish'] as const)('%s is selectable without credentials and stays frozen until the next request',async adapter=>{
+    const h=await host()
+    h.credentials.describe.mockResolvedValue({configured:false})
+    h.changeSettings({version:2,defaultConnection:'builtin:'+adapter,freshness:'realtime'})
+    const fetcher=vi.fn<typeof fetch>(async()=>adapter==='tavily'?Response.json({results:[]}):Response.json({jsonrpc:'2.0',id:1,result:{content:[{type:'text',text:'{"results":[]}'}]}}))
+    vi.stubGlobal('fetch',fetcher)
+    const view=await h.invoke('get',{sessionId:'one'})
+    expect(view.connections.find(c=>c.id==='builtin:'+adapter)).toMatchObject({configured:true,keyless:true})
+    await h.capture()
+    h.changeSettings({version:2,connections:{['builtin:'+adapter]:{access:'api-key'}}})
+    expect((await h.execute('one')).isError).toBe(false)
+    expect(h.credentials.resolve).not.toHaveBeenCalled()
+    expect(h.bridge.diagnostics().at(-1)).toMatchObject({requested:'realtime'})
+    await h.capture('one',1)
+    fetcher.mockResolvedValue(Response.json({results:[]}))
+    expect((await h.execute('one')).isError).toBe(false)
+    expect(h.credentials.resolve).toHaveBeenCalledOnce()
+    expect(new Headers(fetcher.mock.calls.at(-1)?.[1]?.headers).has(adapter==='tavily'?'authorization':'x-api-key')).toBe(true)
+  })
   it('recovers the same request step after late storage-domain activation without blocking inference', async () => {
     const h = await host(undefined, 'native', true)
     const fetcher = successTransport()

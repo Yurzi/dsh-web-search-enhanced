@@ -57,12 +57,14 @@ export async function searchStructured(
   if (typeof request.query !== 'string' || !request.query.trim() || request.query.length > (adapter === 'firecrawl' ? 500 : 10_000)) throw failure('invalid search query')
   if (request.maxResults !== undefined && (!Number.isSafeInteger(request.maxResults) || request.maxResults < 0)) throw failure('invalid result limit')
   const anonymous = context.keyless === true
-  if (anonymous && (adapter !== 'firecrawl' || endpoint.href !== 'https://api.firecrawl.dev/v2/search' || context.apiKey !== undefined)) throw failure('invalid keyless REST route')
+  const keylessEndpoints: Partial<Record<StructuredAdapter, string>> = { firecrawl: 'https://api.firecrawl.dev/v2/search', tavily: 'https://api.tavily.com/search' }
+  if (anonymous && (endpoint.href !== keylessEndpoints[adapter] || context.apiKey !== undefined)) throw failure('invalid keyless REST route')
   if (!anonymous && (typeof context.apiKey !== 'string' || !context.apiKey.trim() || /[\r\n]/.test(context.apiKey))) throw failure('missing or invalid API key', 'WEB_PROVIDER_CREDENTIAL_MISSING')
   if (request.maxResults === 0) return { sources: [], truncated: false }
   const limit = request.maxResults === undefined ? undefined : Math.min(request.maxResults, adapter === 'tavily' ? 20 : 100)
   const headers: Record<string, string> = { accept: 'application/json' }
   const body: Record<string, unknown> = { ...options, query: request.query }
+  if (anonymous && adapter === 'tavily') headers['x-tavily-access-mode'] = 'keyless'
   if (adapter === 'exa' || adapter === 'tinyfish') headers['x-api-key'] = context.apiKey ?? ''
   else if (context.apiKey) headers.authorization = 'Bearer ' + context.apiKey
   if (adapter === 'firecrawl') {
