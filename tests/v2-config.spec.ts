@@ -4,7 +4,7 @@ import { ExecutionContexts } from '../src/dsh/execution-context.ts'
 describe('V2 sparse catalog and request snapshots', () => {
   it('does not materialize presets, select a route or require keys', () => {
     const config = {}; const r = resolveSettings(config)
-    expect(config).toEqual({}); expect(Object.keys(r.connections)).toHaveLength(5)
+    expect(config).toEqual({}); expect(Object.keys(r.connections)).toHaveLength(7)
     expect(r.defaultConnection).toBeUndefined(); expect(r.freshness).toBe('auto')
   })
   it('preserves invalid default and isolated sparse overrides', () => {

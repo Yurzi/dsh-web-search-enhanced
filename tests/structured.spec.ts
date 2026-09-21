@@ -153,4 +153,150 @@ describe('structured search API contracts (official-doc-shaped synthetic fixture
     for (const maxResults of [-1, 1.5, NaN, Infinity]) await expect(searchStructured('exa', { query: 'q', maxResults }, config, { ...context, fetcher })).rejects.toThrow('limit')
     expect(fetcher).not.toHaveBeenCalled()
   })
+
+  describe('academic search adapters (openalex & semanticscholar)', () => {
+    it('OpenAlex executes GET with search query, mailto, and per-page limits', async () => {
+      const payload = {
+        results: [{
+          id: 'https://openalex.org/W123',
+          doi: 'https://doi.org/10.1038/s41586-025-0001',
+          title: 'DeepSeek Reasoning Paper',
+          publication_date: '2025-05-15',
+          cited_by_count: 120,
+          open_access: { is_oa: true, oa_url: 'https://example.org/paper.pdf' },
+          authorships: [
+            { author: { display_name: 'Alice Researcher' } },
+            { author: { display_name: 'Bob Scientist' } },
+          ],
+          abstract_inverted_index: {
+            We: [0],
+            present: [1],
+            a: [2],
+            novel: [3],
+            method: [4],
+          },
+        }],
+      }
+      const fetcher = mock(payload)
+      const result = await searchStructured('openalex', { query: 'deepseek reasoning', maxResults: 5 }, { endpoint: 'https://api.openalex.org/works' }, { ...context, fetcher })
+      expect(result.sources).toHaveLength(1)
+      const s = result.sources[0]!
+      expect(s.url).toBe('https://doi.org/10.1038/s41586-025-0001')
+      expect(s.title).toBe('DeepSeek Reasoning Paper')
+      expect(s.publishedAt).toBe('2025-05-15T00:00:00.000Z')
+      expect(s.snippet).toContain('[Citations: 120]')
+      expect(s.snippet).toContain('[Authors: Alice Researcher, Bob Scientist]')
+      expect(s.snippet).toContain('[OA PDF: https://example.org/paper.pdf]')
+      expect(s.snippet).toContain('We present a novel method')
+
+      const callUrl = new URL(String(fetcher.mock.calls[0]![0]))
+      expect(callUrl.searchParams.get('search')).toBe('deepseek reasoning')
+      expect(callUrl.searchParams.get('per-page')).toBe('5')
+      expect(callUrl.searchParams.get('mailto')).toBe('dsh-web-search@users.noreply.github.com')
+      const init = fetcher.mock.calls[0]![1]!
+      expect(init.method).toBe('GET')
+      expect(init.body).toBeUndefined()
+      expect(new Headers(init.headers).get('authorization')).toBe('Bearer ' + context.apiKey)
+    })
+
+    it('OpenAlex supports anonymous keyless access', async () => {
+      const fetcher = mock({ results: [{ id: 'https://openalex.org/W1', title: 'Paper', abstract_inverted_index: { Hello: [0] } }] })
+      const result = await searchStructured('openalex', { query: 'test' }, { endpoint: 'https://api.openalex.org/works' }, { freshness: 'auto', keyless: true, fetcher })
+      expect(result.sources[0]?.url).toBe('https://openalex.org/W1')
+      const init = fetcher.mock.calls[0]![1]!
+      expect(new Headers(init.headers).has('authorization')).toBe(false)
+    })
+
+    it('Semantic Scholar executes GET with fields, query, x-api-key, and parses TL;DR and citations', async () => {
+      const payload = {
+        total: 1,
+        data: [{
+          paperId: 's2_123456',
+          url: 'https://www.semanticscholar.org/paper/s2_123456',
+          title: 'Attention Mechanism Study',
+          year: 2024,
+          publicationDate: '2024-06-01',
+          citationCount: 450,
+          tldr: { text: 'Attention is efficient and scalable.' },
+          abstract: 'Detailed study of attention layers in large networks.',
+          authors: [{ name: 'Dr. Smith' }, { name: 'Dr. Jones' }],
+          openAccessPdf: { url: 'https://arxiv.org/pdf/2406.00001.pdf' },
+        }],
+      }
+      const fetcher = mock(payload)
+      const result = await searchStructured('semanticscholar', { query: 'attention mechanism', maxResults: 10 }, { endpoint: 'https://api.semanticscholar.org/graph/v1/paper/search' }, { ...context, fetcher })
+      expect(result.sources).toHaveLength(1)
+      const s = result.sources[0]!
+      expect(s.url).toBe('https://www.semanticscholar.org/paper/s2_123456')
+      expect(s.title).toBe('Attention Mechanism Study')
+      expect(s.publishedAt).toBe('2024-06-01T00:00:00.000Z')
+      expect(s.snippet).toContain('[TL;DR: Attention is efficient and scalable.]')
+      expect(s.snippet).toContain('[Citations: 450]')
+      expect(s.snippet).toContain('[Authors: Dr. Smith, Dr. Jones]')
+      expect(s.snippet).toContain('[OA PDF: https://arxiv.org/pdf/2406.00001.pdf]')
+      expect(s.snippet).toContain('Detailed study of attention layers in large networks.')
+
+      const callUrl = new URL(String(fetcher.mock.calls[0]![0]))
+      expect(callUrl.searchParams.get('query')).toBe('attention mechanism')
+      expect(callUrl.searchParams.get('limit')).toBe('10')
+      expect(callUrl.searchParams.get('fields')).toContain('title,url,abstract,tldr')
+      const init = fetcher.mock.calls[0]![1]!
+      expect(init.method).toBe('GET')
+      expect(init.body).toBeUndefined()
+      expect(new Headers(init.headers).get('x-api-key')).toBe(context.apiKey)
+    })
+
+    it('Semantic Scholar rejects keyless mode (requires API key)', async () => {
+      const fetcher = mock({ data: [] })
+      await expect(searchStructured('semanticscholar', { query: 'test' }, { endpoint: 'https://api.semanticscholar.org/graph/v1/paper/search' }, { freshness: 'auto', keyless: true, fetcher })).rejects.toThrow('invalid keyless REST route')
+    })
+
+    it('OpenAlex merges is_oa into filter, uses custom mailto and sets multi-field sort', async () => {
+      const fetcher = mock({ results: [{ id: 'https://openalex.org/W2', title: 'Paper 2', abstract_inverted_index: { Test: [0] } }] })
+      await searchStructured('openalex', { query: 'physics' }, {
+        endpoint: 'https://api.openalex.org/works',
+        options: {
+          filter: 'publication_year:2024',
+          is_oa: true,
+          mailto: 'researcher@example.edu',
+          sort: 'publication_year:desc,cited_by_count:desc',
+        },
+      }, { ...context, fetcher })
+      const callUrl = new URL(String(fetcher.mock.calls[0]![0]))
+      expect(callUrl.searchParams.get('filter')).toBe('publication_year:2024,is_oa:true')
+      expect(callUrl.searchParams.has('is_oa')).toBe(false)
+      expect(callUrl.searchParams.get('mailto')).toBe('researcher@example.edu')
+      expect(callUrl.searchParams.get('sort')).toBe('publication_year:desc,cited_by_count:desc')
+    })
+
+    it('Semantic Scholar safely handles empty search results without data property', async () => {
+      const fetcher = mock({ total: 0 })
+      const result = await searchStructured('semanticscholar', { query: 'nonexistent paper 12345' }, {
+        endpoint: 'https://api.semanticscholar.org/graph/v1/paper/search',
+      }, { ...context, fetcher })
+      expect(result.sources).toEqual([])
+      expect(result.truncated).toBe(false)
+    })
+
+    it('validates OpenAlex and Semantic Scholar options', () => {
+      expect(validateStructuredOptions('openalex', {
+        sort: 'publication_year:desc,cited_by_count:desc',
+        is_oa: true,
+        filter: 'publication_year:2024',
+        mailto: 'academic@institution.org',
+      })).toEqual({
+        sort: 'publication_year:desc,cited_by_count:desc',
+        is_oa: true,
+        filter: 'publication_year:2024',
+        mailto: 'academic@institution.org',
+      })
+      expect(validateStructuredOptions('semanticscholar', { year: '2020-2024', fieldsOfStudy: 'Computer Science,Physics' })).toEqual({
+        year: '2020-2024',
+        fieldsOfStudy: 'Computer Science,Physics',
+      })
+      expect(() => validateStructuredOptions('openalex', { sort: 'unsafe;drop table' })).toThrow()
+      expect(() => validateStructuredOptions('openalex', { mailto: 'not-an-email' })).toThrow()
+      expect(() => validateStructuredOptions('semanticscholar', { year: 'nineteen-ninety' })).toThrow()
+    })
+  })
 })

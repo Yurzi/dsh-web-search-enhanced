@@ -41,6 +41,8 @@ web-search-enhanced:
 | `builtin:firecrawl` | `https://api.firecrawl.dev/v2/search`，不发 Authorization | 同址 REST；`FIRECRAWL_API_KEY` |
 | `builtin:tavily` | `https://api.tavily.com/search`，`X-Tavily-Access-Mode: keyless` | 同址 REST；`TAVILY_API_KEY` |
 | `builtin:tinyfish` | `https://agent.tinyfish.ai/mcp`，`search`，`X-TinyFish-Access-Mode: keyless` | `https://api.search.tinyfish.ai`，GET；`TINYFISH_API_KEY` |
+| `builtin:openalex` | `https://api.openalex.org/works`，GET，不发 Authorization | 同址 REST，Bearer Token；`OPENALEX_API_KEY` |
+| `builtin:semanticscholar` | 不支持匿名（公共 IP 限流）；须配置 API Key | `https://api.semanticscholar.org/graph/v1/paper/search`，GET，`x-api-key`；`SEMANTIC_SCHOLAR_API_KEY` |
 | `builtin:session-model` | 不支持匿名；跟随当前实际 agent 模型 | `llm-pi-ai` 对应 provider 的显式 `apiKeyEnv` |
 
 免 Key 是上游公共访问能力，不是无限额度、服务可用性或永久免登录承诺。IP、地区、额度、服务策略均可能导致拒绝。设置页显示“已配置 / 免 Key”仅说明本地条件满足，不会发网络请求测试供应商。
@@ -74,6 +76,13 @@ web-search-enhanced:
 | Tinyfish | `language` | 2–3 个英文字母，可带连字符及 2–4 个字母后缀 |
 | Tinyfish | `purpose` | 1–2000 字符，不含 U+0000–U+001F |
 | Tinyfish | `domain_type` | `web`、`news`；个人 Key 另可用 `research_paper` |
+| OpenAlex | `sort` | 单个或逗号分隔的多个 `字段:asc` 或 `字段:desc`，如 `cited_by_count:desc` 或 `publication_year:desc,cited_by_count:desc` |
+| OpenAlex | `filter` | 1–500 字符，如 `publication_year:2024` |
+| OpenAlex | `is_oa` | 布尔（自动合并至 filter，如 `is_oa:true`） |
+| OpenAlex | `mailto` | 合法电子邮箱，用于加入 OpenAlex 礼貌池（Polite Pool）享受更快更稳定的响应，缺省使用插件公共标识邮箱 |
+| Semantic Scholar | `year` | 年份或年份范围，如 `2024` 或 `2020-2024` |
+| Semantic Scholar | `fieldsOfStudy` | 学科分类，如 `Computer Science,Physics` |
+| Semantic Scholar | `publicationTypes` | 出版类型，如 `JournalArticle,Conference` |
 
 Exa 免 Key 仅接收查询与数量，非空 options 会被拒绝。Tinyfish 免 Key 查询上限 2000 字符，不能使用 `research_paper`。Firecrawl 查询上限 500 字符，其他结构化 REST 查询上限 10000 字符。数量由工具请求和适配器控制，不能在 options 设置 `limit`、`numResults`、分页或缓存字段。Tavily 请求数量上限 20，Firecrawl/Exa REST 上限 100；Tinyfish 使用单页结果，本地按请求数量裁剪。不自动重试或翻页。
 
@@ -81,7 +90,7 @@ Exa 免 Key 仅接收查询与数量，非空 options 会被拒绝。Tinyfish �
 
 实时性指**内容缓存 / 抓取偏好**，不是发布日期过滤，也不证明页面内容确实最新。它在当前会话持久保存，切换连接保留，fork 复制父会话当前值后独立。连接和实时性共用 revision，多标签页冲突需刷新后重试。请求开始后修改设置不改变该请求已冻结的路由与偏好。
 
-| 模式 | Firecrawl（两种访问方式） | Exa 个人 Key | Exa 免 Key、Tavily、Tinyfish、模型 |
+| 模式 | Firecrawl（两种访问方式） | Exa 个人 Key | Exa 免 Key、Tavily、Tinyfish、OpenAlex、Semantic Scholar、模型 |
 | --- | --- | --- | --- |
 | `auto` 自动 | 默认搜索策略 | 默认内容策略 | 默认行为 |
 | `fresh` 优先新鲜 | `scrapeOptions.maxAge=86400000` 毫秒 | `contents.maxAgeHours=24` 小时 | 忽略该偏好，不猜测上游参数 |

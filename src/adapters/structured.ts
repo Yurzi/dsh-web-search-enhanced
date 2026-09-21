@@ -2,7 +2,7 @@ import { WebError } from '@deepseek-ai/dsh-web'
 import { freshnessDiagnostic, type FreshnessDiagnostic } from '../search/diagnostics.ts'
 import type { WebSearchRequest, WebSearchResult, WebSearchSource } from '@deepseek-ai/dsh-web'
 
-export type StructuredAdapter = 'firecrawl' | 'exa' | 'tavily' | 'tinyfish'
+export type StructuredAdapter = 'firecrawl' | 'exa' | 'tavily' | 'tinyfish' | 'openalex' | 'semanticscholar'
 type Freshness = 'auto' | 'fresh' | 'realtime'
 const MAX_BYTES = 2 * 1024 * 1024
 const SNIPPET_LENGTH = 4000
@@ -20,6 +20,21 @@ function record(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
+function reconstructInvertedIndex(inverted: Record<string, unknown> | undefined): string | undefined {
+  if (!inverted || typeof inverted !== 'object' || Array.isArray(inverted)) return undefined
+  const words: [number, string][] = []
+  for (const [word, posList] of Object.entries(inverted)) {
+    if (Array.isArray(posList)) {
+      for (const pos of posList) {
+        if (typeof pos === 'number' && Number.isSafeInteger(pos) && pos >= 0) words.push([pos, word])
+      }
+    }
+  }
+  if (words.length === 0) return undefined
+  words.sort((a, b) => a[0] - b[0])
+  return words.map(w => w[1]).join(' ')
+}
+
 /** Narrow first-release options; counts and content-cache controls are owned by the adapter. */
 export function validateStructuredOptions(adapter: StructuredAdapter, options: unknown = {}): Record<string, unknown> {
   const rules: Record<StructuredAdapter, Record<string, RegExp | readonly string[] | 'boolean'>> = {
@@ -27,6 +42,8 @@ export function validateStructuredOptions(adapter: StructuredAdapter, options: u
     exa: { type: ['auto', 'fast', 'instant'] },
     tavily: { search_depth: ['basic', 'advanced', 'fast', 'ultra-fast'], topic: ['general', 'news', 'finance'] },
     tinyfish: { location: /^[A-Za-z]{2}$/, language: /^[A-Za-z]{2,3}(?:-[A-Za-z]{2,4})?$/, purpose: /^[^\x00-\x1f]{1,2000}$/, domain_type: ['web', 'news', 'research_paper'] },
+    openalex: { sort: /^[a-z_]+:(?:asc|desc)(?:,[a-z_]+:(?:asc|desc))*$/, filter: /^[^\x00-\x1f]{1,500}$/, is_oa: 'boolean', mailto: /^[^\s@]+@[^\s@]+\.[^\s@]+$/ },
+    semanticscholar: { year: /^\d{4}(?:-\d{4})?$/, fieldsOfStudy: /^[A-Za-z ,]{1,100}$/, publicationTypes: /^[A-Za-z,]{1,100}$/ },
   }
   if (!Object.hasOwn(rules, adapter) || typeof options !== 'object' || options === null || Array.isArray(options)) throw failure('invalid structured options')
   const result: Record<string, unknown> = {}
@@ -57,7 +74,11 @@ export async function searchStructured(
   if (typeof request.query !== 'string' || !request.query.trim() || request.query.length > (adapter === 'firecrawl' ? 500 : 10_000)) throw failure('invalid search query')
   if (request.maxResults !== undefined && (!Number.isSafeInteger(request.maxResults) || request.maxResults < 0)) throw failure('invalid result limit')
   const anonymous = context.keyless === true
-  const keylessEndpoints: Partial<Record<StructuredAdapter, string>> = { firecrawl: 'https://api.firecrawl.dev/v2/search', tavily: 'https://api.tavily.com/search' }
+  const keylessEndpoints: Partial<Record<StructuredAdapter, string>> = {
+    firecrawl: 'https://api.firecrawl.dev/v2/search',
+    tavily: 'https://api.tavily.com/search',
+    openalex: 'https://api.openalex.org/works',
+  }
   if (anonymous && (endpoint.href !== keylessEndpoints[adapter] || context.apiKey !== undefined)) throw failure('invalid keyless REST route')
   if (!anonymous && (typeof context.apiKey !== 'string' || !context.apiKey.trim() || /[\r\n]/.test(context.apiKey))) throw failure('missing or invalid API key', 'WEB_PROVIDER_CREDENTIAL_MISSING')
   if (request.maxResults === 0) return { sources: [], truncated: false }
@@ -65,8 +86,11 @@ export async function searchStructured(
   const headers: Record<string, string> = { accept: 'application/json' }
   const body: Record<string, unknown> = { ...options, query: request.query }
   if (anonymous && adapter === 'tavily') headers['x-tavily-access-mode'] = 'keyless'
-  if (adapter === 'exa' || adapter === 'tinyfish') headers['x-api-key'] = context.apiKey ?? ''
-  else if (context.apiKey) headers.authorization = 'Bearer ' + context.apiKey
+  if (adapter === 'exa' || adapter === 'tinyfish' || adapter === 'semanticscholar') {
+    headers['x-api-key'] = context.apiKey ?? ''
+  } else if (context.apiKey) {
+    headers.authorization = 'Bearer ' + context.apiKey
+  }
   if (adapter === 'firecrawl') {
     body.sources = [{ type: 'web' }]
     if (limit !== undefined) body.limit = limit
@@ -79,13 +103,29 @@ export async function searchStructured(
     if (limit !== undefined) body.max_results = limit
     body.include_answer = false
     body.include_raw_content = false
+  } else if (adapter === 'openalex') {
+    endpoint.searchParams.set('search', request.query)
+    if (limit !== undefined) endpoint.searchParams.set('per-page', String(limit))
+    const mailto = typeof options.mailto === 'string' ? options.mailto : 'dsh-web-search@users.noreply.github.com'
+    endpoint.searchParams.set('mailto', mailto)
+    const filters: string[] = []
+    if (typeof options.filter === 'string' && options.filter.trim()) filters.push(options.filter.trim())
+    if (typeof options.is_oa === 'boolean') filters.push('is_oa:' + options.is_oa)
+    if (filters.length > 0) endpoint.searchParams.set('filter', filters.join(','))
+    if (typeof options.sort === 'string') endpoint.searchParams.set('sort', options.sort)
+  } else if (adapter === 'semanticscholar') {
+    endpoint.searchParams.set('query', request.query)
+    if (limit !== undefined) endpoint.searchParams.set('limit', String(limit))
+    endpoint.searchParams.set('fields', 'title,url,abstract,tldr,authors,year,publicationDate,citationCount,openAccessPdf,externalIds')
+    for (const [key, value] of Object.entries(options)) endpoint.searchParams.set(key, String(value))
   } else {
     endpoint.searchParams.set('query', request.query)
     endpoint.searchParams.set('page', '0')
     for (const [key, value] of Object.entries(options)) endpoint.searchParams.set(key, String(value))
   }
-  const init: RequestInit = { method: adapter === 'tinyfish' ? 'GET' : 'POST', headers }
-  if (adapter !== 'tinyfish') { headers['content-type'] = 'application/json'; init.body = JSON.stringify(body) }
+  const isGet = adapter === 'tinyfish' || adapter === 'openalex' || adapter === 'semanticscholar'
+  const init: RequestInit = { method: isGet ? 'GET' : 'POST', headers }
+  if (!isGet) { headers['content-type'] = 'application/json'; init.body = JSON.stringify(body) }
   const payload = await fetchJson(endpoint.toString(), init, context.signal, context.fetcher)
   const result = normalize(adapter, payload, request.maxResults, context.freshness)
   context.diagnose?.(freshnessDiagnostic(context.freshness, adapter === 'firecrawl' || adapter === 'exa', result.sources.map(s => s.snippet)))
@@ -167,16 +207,36 @@ function normalize(adapter: StructuredAdapter, payload: unknown, limit: number |
   const root = record(payload)
   if (root.error != null || root.success === false) throw failure(adapter + ' returned an API error')
   if (adapter === 'firecrawl' && root.success !== true) throw failure('invalid Firecrawl success envelope')
-  const rows = adapter === 'firecrawl' ? record(root.data).web : root.results
-  if (!Array.isArray(rows)) throw failure('structured response missing results array')
-  const sources: WebSearchSource[] = rows.map(value => {
+  let rawRows: unknown
+  if (adapter === 'firecrawl') {
+    rawRows = record(root.data).web
+  } else if (adapter === 'semanticscholar') {
+    rawRows = root.data ?? (root.total === 0 ? [] : root.results)
+  } else {
+    rawRows = root.results
+  }
+  if (!Array.isArray(rawRows)) throw failure('structured response missing results array')
+  const sources: WebSearchSource[] = rawRows.map(value => {
     const row = record(value)
-    const url = text(row.url)
+    let rawUrl: unknown = row.url
+    if (!rawUrl && adapter === 'openalex') {
+      const doi = typeof row.doi === 'string' && row.doi.startsWith('http') ? row.doi : undefined
+      const oaUrl = row.open_access && typeof row.open_access === 'object' && typeof (row.open_access as any).oa_url === 'string' ? (row.open_access as any).oa_url : undefined
+      const landing = row.primary_location && typeof row.primary_location === 'object' && typeof (row.primary_location as any).landing_page_url === 'string' ? (row.primary_location as any).landing_page_url : undefined
+      const openAlexId = typeof row.id === 'string' && row.id.startsWith('http') ? row.id : undefined
+      rawUrl = doi ?? oaUrl ?? landing ?? openAlexId
+    } else if (!rawUrl && adapter === 'semanticscholar') {
+      const s2Url = typeof row.url === 'string' && row.url.startsWith('http') ? row.url : undefined
+      const oaUrl = row.openAccessPdf && typeof row.openAccessPdf === 'object' && typeof (row.openAccessPdf as any).url === 'string' ? (row.openAccessPdf as any).url : undefined
+      const s2Id = typeof row.paperId === 'string' && row.paperId ? `https://www.semanticscholar.org/paper/${row.paperId}` : undefined
+      rawUrl = s2Url ?? oaUrl ?? s2Id
+    }
+    const url = text(rawUrl)
     if (!url || url.length > 8192) throw failure('invalid structured source URL')
     let parsed: URL
     try { parsed = new URL(url) } catch { throw failure('invalid structured source URL') }
     if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) throw failure('invalid structured source URL')
-    const title = text(row.title)
+    const title = text(row.title ?? row.display_name)
     let snippet: string | undefined
     let date: string | undefined
     if (adapter === 'firecrawl') {
@@ -196,6 +256,49 @@ function normalize(adapter: StructuredAdapter, payload: unknown, limit: number |
     } else if (adapter === 'tavily') {
       snippet = text(row.content)
       // published_date is an estimated published-or-updated date, not a reliable publication timestamp.
+    } else if (adapter === 'openalex') {
+      if (row.snippet !== undefined && row.snippet !== null) {
+        snippet = text(row.snippet)
+      } else {
+        const parts: string[] = []
+        if (typeof row.cited_by_count === 'number') parts.push(`[Citations: ${row.cited_by_count}]`)
+        if (Array.isArray(row.authorships)) {
+          const authors = row.authorships
+            .map((a: unknown) => typeof a === 'object' && a !== null && typeof (a as any).author === 'object' && (a as any).author !== null ? text((a as any).author.display_name) : undefined)
+            .filter((n): n is string => Boolean(n))
+            .slice(0, 5)
+          if (authors.length > 0) parts.push(`[Authors: ${authors.join(', ')}]`)
+        }
+        const oaUrl = row.open_access && typeof row.open_access === 'object' && typeof (row.open_access as any).oa_url === 'string' ? text((row.open_access as any).oa_url) : undefined
+        if (oaUrl && oaUrl !== url) parts.push(`[OA PDF: ${oaUrl}]`)
+        const reconstructed = reconstructInvertedIndex(row.abstract_inverted_index as Record<string, unknown> | undefined)
+        if (reconstructed) parts.push(reconstructed)
+        else if (typeof row.description === 'string') parts.push(row.description)
+        snippet = parts.length > 0 ? parts.join(' ') : undefined
+      }
+      date = text(row.publication_date ?? (typeof row.publication_year === 'number' ? `${row.publication_year}-01-01` : undefined))
+    } else if (adapter === 'semanticscholar') {
+      if (row.snippet !== undefined && row.snippet !== null) {
+        snippet = text(row.snippet)
+      } else {
+        const parts: string[] = []
+        const tldr = typeof row.tldr === 'object' && row.tldr !== null && typeof (row.tldr as any).text === 'string' ? text((row.tldr as any).text) : undefined
+        if (tldr) parts.push(`[TL;DR: ${tldr}]`)
+        if (typeof row.citationCount === 'number') parts.push(`[Citations: ${row.citationCount}]`)
+        if (Array.isArray(row.authors)) {
+          const authors = row.authors
+            .map((a: unknown) => typeof a === 'object' && a !== null ? text((a as any).name) : undefined)
+            .filter((n): n is string => Boolean(n))
+            .slice(0, 5)
+          if (authors.length > 0) parts.push(`[Authors: ${authors.join(', ')}]`)
+        }
+        const oaPdfUrl = row.openAccessPdf && typeof row.openAccessPdf === 'object' && typeof (row.openAccessPdf as any).url === 'string' ? text((row.openAccessPdf as any).url) : undefined
+        if (oaPdfUrl && oaPdfUrl !== url) parts.push(`[OA PDF: ${oaPdfUrl}]`)
+        const abstract = text(row.abstract)
+        if (abstract) parts.push(abstract)
+        snippet = parts.length > 0 ? parts.join(' ') : undefined
+      }
+      date = text(row.publicationDate ?? (typeof row.year === 'number' ? `${row.year}-01-01` : undefined))
     } else {
       snippet = text(row.snippet)
       date = text(row.date)

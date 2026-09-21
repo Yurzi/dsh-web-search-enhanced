@@ -247,7 +247,7 @@ export function V2Settings({ scope, credentials }: V2SettingsProps) {
           <div className="v2s-section">
             <div className="v2s-section-head">
               <h4 className="v2s-section-title">内置结构化连接</h4>
-              <span className="v2s-section-desc">四种内置服务均支持免 Key；个人 API Key 需显式切换</span>
+              <span className="v2s-section-desc">多种内置服务支持免 Key；部分学术连接或个人 API Key 需显式配置与切换</span>
             </div>
             <div className="v2s-list">
               {Object.entries(CATALOG).map(([id, c]) => {
