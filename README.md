@@ -67,10 +67,10 @@
 
 **方式 A：通过 GitHub Release 离线包安装（推荐）**
 
-从 [v0.1.0 Release](https://github.com/Yurzi/dsh-web-search-enhanced/releases/tag/v0.1.0) 下载预构建包 `dsh-web-search-enhanced-0.1.0.tgz`，执行绝对路径安装命令：
+从 [v0.1.1 Release](https://github.com/Yurzi/dsh-web-search-enhanced/releases/tag/v0.1.1) 下载预构建包 `dsh-web-search-enhanced-0.1.1.tgz`，执行绝对路径安装命令：
 
 ```sh
-dsh plugin --profile web add /path/to/dsh-web-search-enhanced-0.1.0.tgz
+dsh plugin --profile web add /path/to/dsh-web-search-enhanced-0.1.1.tgz
 ```
 
 **方式 B：通过 npm 在线安装**
@@ -78,7 +78,7 @@ dsh plugin --profile web add /path/to/dsh-web-search-enhanced-0.1.0.tgz
 在版本已发布到 npm 仓库后，也可直接安装：
 
 ```sh
-dsh plugin --profile web add dsh-web-search-enhanced@0.1.0
+dsh plugin --profile web add dsh-web-search-enhanced@0.1.1
 ```
 
 ### 步骤 2：生效与刷新
@@ -197,7 +197,7 @@ _注：实时抓取可能会稍微增加检索耗时与额度消耗；对于不�
 | 📙 **[升级指南](docs/migration.zh-CN.md)**               | 从旧版升级的老用户  | 0.1.0 架构变化、旧版导入指引、升级踩坑预防                        |
 | 📗 **[架构设计说明](docs/design-v2.converged.zh-CN.md)** | 开发者 / 架构爱好者 | 会话状态隔离、请求快照机制、多适配器与安全性设计                  |
 | 🛠️ **[开发与验证文档](docs/v2-implementation.zh-CN.md)** | 插件二次开发者      | 本地构建、单元测试、浏览器环境验证与打包发布                      |
-| 📝 **[更新日志](CHANGELOG.md)**                          | 所有人              | 0.1.0 重构记录与历史版本变更                                      |
+| 📝 **[更新日志](CHANGELOG.md)**                          | 所有人              | 版本演进记录与历史变更                                            |
 
 ---
 

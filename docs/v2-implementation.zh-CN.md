@@ -1,4 +1,4 @@
-# 0.1.0 开发与验证指南
+# 0.1.1 开发与验证指南
 
 本文件保留原路径以避免断链，内容改为可重复的开发、验证与交付方法。架构见[当前架构](design-v2.converged.zh-CN.md)，用户使用见[配置参考](configuration.zh-CN.md)，版本升级见[升级指南](migration.zh-CN.md)。测试存在、测试通过、供应商在线可用、运行实例完成部署是四种不同结论，不能互相替代。
 
@@ -6,7 +6,7 @@
 
 - Node.js：`^22.19.0 || >=24.0.0`；pnpm：按 packageManager 使用 `11.7.0`。
 - DSH：包要求 `>=0.1.5-rc.2`，源码以 rc.2 服务契约为基线。依赖声明与锁文件是构建依据，不修改宿主安装的依赖来让测试通过。
-- 当前开发主线为 `main`，旧版代码线为 `legacy/v0.0.x`。包版本 `0.1.0` 与 settings schema 的 `version: 2` 不同。
+- 当前开发主线为 `main`，旧版代码线为 `legacy/v0.0.x`。包版本 `0.1.1` 与 settings schema 的 `version: 2` 不同。
 
 在仓库根执行：
 
@@ -99,7 +99,7 @@ preview-ui 写 `.dsh-smoke-home/settings-preview.html`，不会启动第二个 D
 
 1. 对最终待发提交运行 check 和所需浏览器 / 网络验证，记录版本与退出状态。
 2. 使用 `pnpm pack` 生成构建包；检查包版本、入口、声明、patch、README 与 docs 完整性。GitHub 自动 Source code archive 不是含 lib 的发行 tgz。
-3. 用户可用 `dsh plugin --profile web add /absolute/path/to/dsh-web-search-enhanced-0.1.0.tgz` 安装 Release 构建附件。
+3. 用户可用 `dsh plugin --profile web add /absolute/path/to/dsh-web-search-enhanced-0.1.1.tgz` 安装 Release 构建附件。
 4. Git 操作、远端分支调整、标签、Release 和 npm 发布分别需要授权与结果核验；不要把本地构建当作已发布。主线为 main，旧代码保留 legacy/v0.0.x，不需要把历史文档反复改成当前成功记录。
 5. 标签触发发布流程后，单独确认 workflow 和 npm registry 的版本 / 包内容，再宣称 npm 可安装。
 
