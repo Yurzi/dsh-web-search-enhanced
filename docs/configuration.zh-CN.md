@@ -1,18 +1,19 @@
-# 0.1.2 配置参考
+# 0.1.3 配置参考
 
-本指南面向安装版插件。包版本为 **0.1.2**，配置格式的 `version` 为 **2**；两者不是同一版本号。快速开始见 [README](../README.md)，旧版用户先读[升级指南](migration.zh-CN.md)。
+本指南面向安装版插件。包版本为 **0.1.3**，配置格式的 `version` 为 **2**；两者不是同一版本号。快速开始见 [README](../README.md)，旧版用户先读[升级指南](migration.zh-CN.md)。
 
 ## 配置入口与作用范围
 
-在 DSH 设置的 Web Search Enhanced 卡片管理搜索连接、凭据引用与新会话默认值，在已有会话输入区选择搜索连接和内容实时性。搜索连接独立于对话模型。设置按宿主 SettingsScope 保存稀疏覆盖，不复制整个内置目录；恢复继承设置、删除用户连接覆盖均不删除 Credentials。继承层中的连接在移除用户覆盖后仍可能存在。
+在 DSH 设置的 Web Search Enhanced 卡片管理搜索连接、凭据引用与新会话默认值，在已有会话输入区选择搜索连接和内容实时性。搜索连接独立于对话模型。设置按宿主 ConfigForms / ConfigForm 保存 profile 稀疏覆盖，不复制整个内置目录；恢复继承设置、删除用户连接覆盖均不删除 Credentials。继承层中的连接在移除用户覆盖后仍可能存在。
 
-以下 YAML 的 `web-search-enhanced` 是 Settings 命名空间。若编辑 Cordis 插件条目的 `config`，仅放该命名空间下的字段，不能原样把整个示例作为 Cordis 根配置。优先使用设置 UI，避免覆盖其他插件设置。
+以下 YAML 均为 DSH 0.1.7 的 profile patch 条目，`id: web-search-enhanced` 是安装补丁的固定条目 ID，字段置于 `config` 下。旧 `settings.yaml` 由宿主导入后不再作为实时配置源；优先使用插件管理器中的配置页，避免覆盖其他插件设置。专属客户端配置页绑定默认条目 ID，不支持任意改名或多个搜索插件实例。
 
 ```yaml
-web-search-enhanced:
-  version: 2
-  defaultConnection: builtin:exa
-  freshness: auto
+- id: web-search-enhanced
+  config:
+    version: 2
+    defaultConnection: builtin:exa
+    freshness: auto
 ```
 
 | 顶层字段 | 类型 / 默认 | 含义 |
@@ -50,16 +51,17 @@ web-search-enhanced:
 内置结构化连接只允许覆盖 `label`（非空）、`disabled`（布尔，默认 false）、`credentialRef`、`access`、`options`。不能改其 `kind`、`adapter`、`endpoint` 或添加任意请求字段。
 
 ```yaml
-web-search-enhanced:
-  version: 2
-  connections:
-    builtin:exa:
-      access: api-key
-      credentialRef: EXA_API_KEY
-      options:
-        type: fast
-    builtin:firecrawl:
-      disabled: true
+- id: web-search-enhanced
+  config:
+    version: 2
+    connections:
+      builtin:exa:
+        access: api-key
+        credentialRef: EXA_API_KEY
+        options:
+          type: fast
+      builtin:firecrawl:
+        disabled: true
 ```
 
 ### 结构化 options 白名单
@@ -109,16 +111,17 @@ Firecrawl 非 auto 会请求内联 Markdown 正文，正文缺失时不拿旧搜
 ID 格式为 `custom:` 加 1–100 个字符，首字符为字母或数字，后续可含字母、数字、点、下划线、连字符。必需 `label`、`kind: structured`、已支持的 `adapter`、`credentialRef`；可用 `disabled`、`endpoint`、`trustedEndpoint`、`options`。省略 endpoint 使用该 adapter 的官方 REST 地址；不同地址必须显式 `trustedEndpoint: true`。自定义结构化连接**只用个人 Key**，不接受 `access`、任意 headers 或任意 body。
 
 ```yaml
-web-search-enhanced:
-  version: 2
-  connections:
-    custom:team-tavily:
-      label: 团队 Tavily
-      kind: structured
-      adapter: tavily
-      credentialRef: TEAM_TAVILY_API_KEY
-      options:
-        topic: news
+- id: web-search-enhanced
+  config:
+    version: 2
+    connections:
+      custom:team-tavily:
+        label: 团队 Tavily
+        kind: structured
+        adapter: tavily
+        credentialRef: TEAM_TAVILY_API_KEY
+        options:
+          topic: news
 ```
 
 自定义地址必须为绝对 HTTP(S) URL，不含内嵌账号密码、查询或片段。信任标志意味着你同意向该地址发送搜索词与所选凭据，不是自动安全检测；建议使用 HTTPS。
@@ -128,22 +131,23 @@ web-search-enhanced:
 自定义模型必须为 `kind: model`，含 `label`、`trustedEndpoint: true` 和完整 `binding`。`disabled` 默认 false，`options` 默认空对象。
 
 ```yaml
-web-search-enhanced:
-  version: 2
-  connections:
-    custom:search-model:
-      label: 专用搜索模型
-      kind: model
-      trustedEndpoint: true
-      binding:
-        mode: fixed
-        protocol: openai-responses
-        model: YOUR_SEARCH_CAPABLE_MODEL
-        baseURL: https://api.openai.com/v1
-        credentialRef: SEARCH_MODEL_API_KEY
-      options:
-        maxTokens: 4096
-        searchContextSize: medium
+- id: web-search-enhanced
+  config:
+    version: 2
+    connections:
+      custom:search-model:
+        label: 专用搜索模型
+        kind: model
+        trustedEndpoint: true
+        binding:
+          mode: fixed
+          protocol: openai-responses
+          model: YOUR_SEARCH_CAPABLE_MODEL
+          baseURL: https://api.openai.com/v1
+          credentialRef: SEARCH_MODEL_API_KEY
+        options:
+          maxTokens: 4096
+          searchContextSize: medium
 ```
 
 `model` 必须非空；示例占位值需替换为实际支持服务端搜索的模型。`baseURL` 遵守上述 URL 约束。支持协议和路径：
@@ -172,16 +176,17 @@ web-search-enhanced:
 `builtin:session-model` 仅允许 `disabled` 和 `optionsByProtocol` 覆盖，不能重命名或设置固定 binding。每个协议单独保存上述模型 options：
 
 ```yaml
-web-search-enhanced:
-  version: 2
-  defaultConnection: builtin:session-model
-  connections:
-    builtin:session-model:
-      optionsByProtocol:
-        anthropic-messages:
-          maxUses: 3
-        openai-responses:
-          searchContextSize: low
+- id: web-search-enhanced
+  config:
+    version: 2
+    defaultConnection: builtin:session-model
+    connections:
+      builtin:session-model:
+        optionsByProtocol:
+          anthropic-messages:
+            maxUses: 3
+          openai-responses:
+            searchContextSize: low
 ```
 
 实际 agent 请求头必须有完整 provider/model；仅无请求头时才读同一 agent options，不混拼不完整字段。插件读取 `llm-pi-ai.providers[provider]` 的 `api`、`baseURL`、`apiKeyEnv`；协议也识别宿主的 `openai-completions` 为 Chat Completions。只在缺省协议 / 地址时尝试只读模型目录补齐。

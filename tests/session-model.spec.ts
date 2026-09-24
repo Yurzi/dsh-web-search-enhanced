@@ -1,4 +1,5 @@
-import type { Context } from '@deepseek-ai/cordis'
+import { Context } from '@deepseek-ai/cordis'
+import { LlmRuntime, LlmAdapter } from '@deepseek-ai/dsh-llm'
 import { describe, expect, it, vi } from 'vitest'
 import {
   captureFollowSettings, FollowModelError, FollowRequest, resolveFollowBinding, sessionModelSelection,
@@ -12,17 +13,21 @@ const explicit = (extra: Profile = {}): Profile => ({
 })
 function host(providers: Record<string, unknown> = { chat: explicit() }, adapter: unknown = {}) {
   const registrations = new Map(Object.keys(providers).map(name => [name, adapter]))
-  const settingsGet = vi.fn((namespace: string) => namespace === 'llm-pi-ai' ? { providers } : undefined)
+  const forms: Array<{ ns: string; value: unknown }> = [{ ns: 'custom-pi-instance', value: { providers } }]
+  const directory = Object.keys(providers).map(provider => ({ provider, settingsNs: 'custom-pi-instance', settingsPath: ['providers', provider] }))
+  const settingsDescribe = vi.fn(() => forms)
+  const listConfigurableProviders = vi.fn(() => directory)
+  const listProviders = vi.fn(() => [...registrations.keys()].map(id => ({ id, name: id })))
   const registration = vi.fn((provider: string) => {
     if (!registrations.has(provider)) throw new Error('not registered')
     return { adapter: registrations.get(provider) }
   })
   const get = vi.fn((name: string) => {
-    if (name === 'settings') return { get: settingsGet }
-    if (name === 'llm') return { registration }
+    if (name === 'settings') return { describe: settingsDescribe }
+    if (name === 'llm') return { registration, listConfigurableProviders, listProviders }
     throw new Error('unexpected service access: ' + name)
   })
-  return { ctx: { get } as unknown as Context, providers, registrations, settingsGet, registration, get }
+  return { ctx: { get } as unknown as Context, providers, registrations, settingsDescribe, listConfigurableProviders, forms, directory, registration, get }
 }
 function agent(header: { config?: ModelSelection } | undefined = { config: selection }, options: ModelSelection = { provider: 'other', model: 'option-model' }): SessionModelAgent {
   return { options, session: { requestHeader: vi.fn(() => header) } }
@@ -61,6 +66,20 @@ describe('session model selection', () => {
 })
 
 describe('settings-first follow bindings', () => {
+  it('reads a renamed entry through the public target directory with the private identity shim', async () => {
+    const ctx = new Context()
+    try {
+      new LlmRuntime(ctx)
+      class FixtureAdapter extends LlmAdapter {
+        async *stream(): AsyncIterable<never> { throw new Error('Search must not invoke chat') }
+      }
+      ctx.llm.registerAdapter(['chat'], new FixtureAdapter())
+      ctx.llm.registerConfigurableProviders([{ provider: 'chat', displayName: 'Chat', settingsNs: 'custom-instance', settingsPath: ['nested', 'route'] }])
+      ctx.provide('settings', { describe: () => [{ ns: 'custom-instance', value: { nested: { route: explicit() } } }] } as never)
+      const request = new FollowRequest(captureFollowSettings(ctx))
+      expect(request.resolve(agent())).toMatchObject({ model: 'model-a', credentialRef: 'CHAT_TEST_KEY' })
+    } finally { await ctx.fiber.dispose() }
+  })
   it.each([
     ['anthropic-messages', 'anthropic-messages'],
     ['openai-responses', 'openai-responses'],
@@ -74,8 +93,36 @@ describe('settings-first follow bindings', () => {
     const h = host(undefined, adapter)
     const captured = captureFollowSettings(h.ctx)
     expect(resolveFollowBinding(captured.settings, selection).model).toBe('model-a')
-    expect(h.settingsGet).toHaveBeenCalledWith('llm-pi-ai')
+    expect(h.settingsDescribe).toHaveBeenCalledOnce()
+    expect(h.listConfigurableProviders).toHaveBeenCalledOnce()
     expect(h.get.mock.calls.map(([name]) => name).sort()).toEqual(['llm', 'settings'])
+  })
+  it('uses the directory entry namespace and exact nested path, including a root profile', () => {
+    const h = host({ chat: explicit(), other: explicit() })
+    h.forms.splice(0, h.forms.length,
+      { ns: 'nested-instance', value: { routes: { primary: explicit({ apiKeyEnv: 'NESTED_KEY' }) } } },
+      { ns: 'root-instance', value: explicit({ baseURL: 'https://root.example.test', apiKeyEnv: 'ROOT_KEY' }) },
+      { ns: 'llm-pi-ai', value: { providers: { chat: explicit({ apiKeyEnv: 'WRONG_KEY' }) } } },
+    )
+    h.directory[0]!.settingsNs = 'nested-instance'
+    h.directory[0]!.settingsPath = ['routes', 'primary']
+    h.directory[1]!.settingsNs = 'root-instance'
+    h.directory[1]!.settingsPath = []
+    const captured = captureFollowSettings(h.ctx)
+    expect(resolveFollowBinding(captured.settings, selection).credentialRef).toBe('NESTED_KEY')
+    expect(resolveFollowBinding(captured.settings, { provider: 'other', model: 'model-a' })).toMatchObject({ baseURL: 'https://root.example.test', credentialRef: 'ROOT_KEY' })
+  })
+  it.each(['namespace', 'path', 'directory'] as const)('fails closed on a missing directory %s without guessing the old namespace', missing => {
+    const h = host()
+    if (missing === 'namespace') h.directory[0]!.settingsNs = 'absent'
+    if (missing === 'path') h.directory[0]!.settingsPath = ['providers', 'absent']
+    if (missing === 'directory') h.directory.length = 0
+    unsupported(() => resolveFollowBinding(captureFollowSettings(h.ctx).settings, selection))
+  })
+  it('does not read inherited object properties as a provider profile', () => {
+    const h = host()
+    h.forms[0]!.value = { providers: Object.create({ chat: explicit() }) }
+    unsupported(() => resolveFollowBinding(captureFollowSettings(h.ctx).settings, selection))
   })
   it('fails for missing settings or selected provider rather than using another provider', () => {
     const empty = { get: () => undefined } as unknown as Context
@@ -98,6 +145,11 @@ describe('settings-first follow bindings', () => {
     const h = host(); h.registrations.delete('chat')
     unsupported(() => resolveFollowBinding(captureFollowSettings(h.ctx).settings, selection))
   })
+  it.each([undefined, null, {}, { adapter: null }])('refuses an unavailable private identity shape: %j', entry => {
+    const h = host()
+    h.registration.mockReturnValue(entry as never)
+    unsupported(() => resolveFollowBinding(captureFollowSettings(h.ctx).settings, selection))
+  })
   it('honors explicit model allowlists while permitting metadata-only model overrides', () => {
     const profile = explicit({ models: [{ id: 'model-a', name: 'Allowed' }], modelOverrides: { 'model-a': { contextWindow: 1000 } } })
     expect(binding(profile).model).toBe('model-a')
@@ -105,7 +157,7 @@ describe('settings-first follow bindings', () => {
     unsupported(() => binding(explicit({ models: [] })))
     unsupported(() => binding(explicit({ models: 'model-a' })))
   })
-  it.each(['api', 'baseURL', 'apiKeyEnv', 'apiKey', 'headers'])('refuses rc.2 unsupported model-level %s in entries and overrides', field => {
+  it.each(['api', 'baseURL', 'apiKeyEnv', 'apiKey', 'headers'])('refuses unsupported model-level %s in entries and overrides', field => {
     for (const extra of [
       { models: [{ id: 'model-a', [field]: 'fake-value' }] },
       { modelOverrides: { 'model-a': { [field]: 'fake-value' } } },
@@ -186,7 +238,7 @@ describe('request snapshot and binding cache', () => {
     expect(request.resolve(a)).toMatchObject({ model: 'model-b', baseURL: first.baseURL })
     current = selection
     expect(request.resolve(a)).toBe(first)
-    expect(h.settingsGet).toHaveBeenCalledOnce()
+    expect(h.settingsDescribe).toHaveBeenCalledOnce()
     expect(Object.isFrozen(first)).toBe(true)
   })
   it.each(['replace', 'remove'])('rejects adapter %s even after binding was cached', change => {

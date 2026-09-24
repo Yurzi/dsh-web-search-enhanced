@@ -1,4 +1,4 @@
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { SearchLocaleProps, SettingsFace } from './bindings.ts'
 interface CredentialRemoteFailure { ok: false; error: { message: string } }
 interface CredentialRemoteSuccess<T> { ok: true; value: T }
 type CredentialRemoteResult<T> = CredentialRemoteSuccess<T> | CredentialRemoteFailure
@@ -6,7 +6,7 @@ export interface CredentialRemote {
   describe: (refs: string[]) => Promise<CredentialRemoteResult<Record<string, { configured: boolean; writable?: boolean }>>>
   set: (ref: string, value: string) => Promise<CredentialRemoteResult<unknown>>
 }
-import { useEffect, useId, useMemo, useState, useSyncExternalStore } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import type { LocaleKey } from './locales.ts'
 
 export type SearchProtocol = 'anthropic-messages' | 'openai-responses' | 'openai-chat-completions'
@@ -25,7 +25,7 @@ export interface SearchSettings {
   chatSearchMode?: 'search-model' | 'vendor-options'
   searchContextSize?: 'low' | 'medium' | 'high'
 }
-export interface SearchSettingsCardProps { scope: SettingsScope<SearchSettings>; credentials: CredentialRemote; t: (key: LocaleKey) => string }
+export type SearchSettingsCardProps = SettingsFace<SearchSettings> & SearchLocaleProps
 export interface Draft {
   modelMode: ModelMode; protocol: SearchProtocol; baseURL: string; model: string; fallbackModel: string; apiKeyEnv: string; apiVersion: string
   toolIdentifier: string; maxTokens: string; maxUses: string; chatSearchMode: 'search-model' | 'vendor-options'; searchContextSize: '' | 'low' | 'medium' | 'high'
@@ -48,11 +48,7 @@ export const SCHEMA_DEFAULTS: Record<typeof editableFields[number], unknown> = {
   searchContextSize: undefined,
 }
 
-export interface SettingsMutationOp {
-  op: 'set' | 'unset'
-  path: string[]
-  value?: unknown
-}
+export type SettingsMutationOp = import('@deepseek-ai/dsh-api-remotes/client').SettingsPathOpView
 
 export function targetValuesFromDraft(draft: Draft): Record<typeof editableFields[number], unknown> {
   return {
@@ -73,7 +69,7 @@ export function targetValuesFromDraft(draft: Draft): Record<typeof editableField
 
 /**
  * Compute sparse mutation operations required to synchronize user overrides.
- * Default values matching the inherited baseline are omitted to prevent settings.yaml
+ * Default values matching the inherited baseline are omitted to prevent profile patch
  * bloating, and existing redundant overrides are pruned automatically.
  */
 export function computeSettingsOperations(
@@ -110,7 +106,7 @@ export function computeSettingsOperations(
           ops.push({ op: 'unset', path: [field] })
         }
       } else {
-        ops.push({ op: 'set', path: [field], value: targetVal })
+        ops.push({ op: 'set', path: [field], value: targetVal as Extract<SettingsMutationOp, { op: 'set' }>['value'] })
       }
     } else if (isOverriddenInUser) {
       ops.push({ op: 'unset', path: [field] })
@@ -139,7 +135,7 @@ export function draftFrom(value: SearchSettings | undefined): Draft {
 }
 
 /** Validate a draft and return field-specific locale keys. */
-export async function saveCredential(credentials: CredentialRemote, ref: string, value: string): Promise<boolean> {
+export async function saveCredential(credentials: Pick<CredentialRemote, 'set'>, ref: string, value: string): Promise<boolean> {
   const secret = value.trim()
   if (secret.length === 0) return false
   const result = await credentials.set(ref.trim(), secret)
@@ -365,8 +361,8 @@ const cardCss = `
 }
 `
 
-export function SearchSettingsCard({ scope, credentials, t }: SearchSettingsCardProps) {
-  const snapshot = useSyncExternalStore(scope.subscribe.bind(scope), scope.getSnapshot.bind(scope))
+export function SearchSettingsCard({ useSettings, mutateSettings, describeCredentials, setCredential, t }: SearchSettingsCardProps) {
+  const snapshot = useSettings(value => value)
   const resolved = useMemo(() => draftFrom(snapshot.value), [snapshot.value])
   const [draft, setDraft] = useState(resolved)
   const [open, setOpen] = useState(false)
@@ -382,11 +378,11 @@ export function SearchSettingsCard({ scope, credentials, t }: SearchSettingsCard
     const ref = draft.apiKeyEnv.trim()
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/u.test(ref)) { setCredentialConfigured(false); return }
     let active = true
-    void credentials.describe([ref]).then(result => {
+    void describeCredentials([ref]).then(result => {
       if (active) setCredentialConfigured(result.ok && result.value[ref]?.configured === true)
     }).catch(() => { if (active) setCredentialConfigured(false) })
     return () => { active = false }
-  }, [credentials, draft.apiKeyEnv])
+  }, [describeCredentials, draft.apiKeyEnv])
   const errors = useMemo(() => validateDraft(draft), [draft])
   const dirty = resetToProfile || apiKey.length > 0 || JSON.stringify(draft) !== JSON.stringify(resolved)
   const invalid = Object.keys(errors).length > 0
@@ -399,20 +395,10 @@ export function SearchSettingsCard({ scope, credentials, t }: SearchSettingsCard
     if (disabled || !dirty || invalid) return
     setSaving(true); setFailed(false)
     try {
-      if (await saveCredential(credentials, draft.apiKeyEnv, apiKey)) setCredentialConfigured(true)
+      if (await saveCredential({ set: setCredential }, draft.apiKeyEnv, apiKey)) setCredentialConfigured(true)
       const ops = computeSettingsOperations(draft, snapshot, resetToProfile)
       if (ops.length > 0) {
-        if (typeof scope.mutate === 'function') {
-          await scope.mutate(ops as any)
-        } else {
-          for (const op of ops) {
-            const field = op.path[0]
-            if (field !== undefined) {
-              if (op.op === 'set') await scope.set(field, op.value)
-              else await scope.unset(field)
-            }
-          }
-        }
+        if (snapshot.revision === undefined || !await mutateSettings(ops, snapshot.revision)) throw new Error(t('failed'))
       }
       setApiKey(''); setHasDraft(false); setResetToProfile(false); setOpen(false)
     } catch { setFailed(true) } finally { setSaving(false) }

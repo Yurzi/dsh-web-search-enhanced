@@ -1,9 +1,9 @@
-import { existsSync, mkdirSync, readFileSync, statSync, promises as fsPromises } from 'node:fs'
+import { existsSync, readFileSync, statSync, promises as fsPromises } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { SessionModelAgent } from './session-model.ts'
+import type { ModelSelection, SessionModelAgent } from './session-model.ts'
 
 export interface ModelPairingCacheFile {
   version: 1
@@ -24,81 +24,35 @@ export function formatModelKey(provider?: string, model?: string): string | unde
   return p ? `${p}:${m}` : m
 }
 
+/** Pairing preference follows the next selected model; execution uses sessionModelSelection instead. */
 export function extractSessionModel(
   agent?: SessionModelAgent | Agent,
   ctx?: Context
 ): { provider?: string; model?: string } | undefined {
   if (!agent) return undefined
+  const projections = ctx?.get('sessionProjections') as {
+    stateOf?: (session: unknown, key: string) => {
+      pending?: ModelSelection | null
+      lastUsed?: ModelSelection | null
+    } | undefined
+  } | undefined
+  // The projection owns pending intent and its consumption by request/header.
+  // Scanning the latest model/selection event alone can resurrect consumed intent.
+  const state = projections?.stateOf?.(agent.session, 'modelSelection')
+  const projected = state?.pending ?? state?.lastUsed
+  const pair = (value: ModelSelection): ModelSelection => ({
+    ...(value.provider ? { provider: value.provider } : {}), ...(value.model ? { model: value.model } : {}),
+  })
+  if (projected?.model) return pair(projected)
 
-  // 1. Check sessionProjections if registered on ctx
-  try {
-    const session = agent.session as unknown as { snapshotEvents?: () => readonly { type: string; data?: unknown }[] }
-    if (ctx && session) {
-      const projections = ctx.get('sessionProjections') as {
-        stateOf?: (s: unknown, key: string) => {
-          pending?: { provider?: string; model?: string } | null
-          lastUsed?: { provider?: string; model?: string } | null
-        } | undefined
-      } | undefined
-      const state = projections?.stateOf?.(session, 'modelSelection')
-      const target = state?.pending ?? state?.lastUsed
-      if (target?.model) {
-        return target.provider ? { provider: target.provider, model: target.model } : { model: target.model }
-      }
-    }
-  } catch { /* ignore projection lookup error */ }
-
-  // 2. Check recent model/selection events in session log
-  try {
-    const session = agent.session as unknown as { snapshotEvents?: () => readonly { type: string; data?: unknown }[] }
-    if (typeof session?.snapshotEvents === 'function') {
-      const events = session.snapshotEvents()
-      for (let i = events.length - 1; i >= 0; i--) {
-        const ev = events[i]
-        if (ev?.type === 'model/selection' && ev.data && typeof ev.data === 'object') {
-          const d = ev.data as { provider?: string; model?: string }
-          if (typeof d.model === 'string' && d.model.trim()) {
-            const p = d.provider?.trim()
-            return p ? { provider: p, model: d.model.trim() } : { model: d.model.trim() }
-          }
-        }
-      }
-    }
-  } catch { /* ignore event log access failure */ }
-
-  // 3. Check committed requestHeader
-  try {
-    const header = agent.session?.requestHeader?.()
-    if (header?.config?.model) {
-      const p = header.config.provider
-      return p ? { provider: p, model: header.config.model } : { model: header.config.model }
-    }
-  } catch { /* ignore requestHeader failure */ }
-
-  // 4. Check agent.options
-  try {
-    const opts = (agent as unknown as { options?: { provider?: string; model?: string } }).options
-    if (opts?.model) {
-      const p = opts.provider
-      return p ? { provider: p, model: opts.model } : { model: opts.model }
-    }
-  } catch { /* ignore options failure */ }
-
-  // 5. Fallback to agentDefaultModel on context
-  try {
-    if (ctx) {
-      const defaultModel = ctx.get('agentDefaultModel') as {
-        currentSelection?: () => { provider?: string; model?: string }
-      } | undefined
-      const current = defaultModel?.currentSelection?.()
-      if (current?.model) {
-        const p = current.provider
-        return { ...(p !== undefined ? { provider: p } : {}), model: current.model }
-      }
-    }
-  } catch { /* ignore agentDefaultModel failure */ }
-
-  return undefined
+  const header = agent.session.requestHeader()
+  if (header !== undefined) return header.config?.model ? pair(header.config) : undefined
+  if (agent.options?.model) return pair(agent.options)
+  const defaults = ctx?.get('agentDefaultModel') as {
+    currentSelection(): ModelSelection
+  } | undefined
+  const current = defaults?.currentSelection()
+  return current?.model ? pair(current) : undefined
 }
 
 export class ModelPairingStore {

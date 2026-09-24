@@ -2,6 +2,31 @@
 
 记录 `dsh-web-search-enhanced` 的用户可见变化。历史条目描述对应版本，不代表当前行为。
 
+## [0.1.3] - 2026-09-24
+
+### 界面细节对齐
+
+- 保留设置卡片、行内配置与会话搜索菜单布局，对齐 DSH 的中性色按钮、表单底色、细边框、状态标签和单色凭据图标。
+- 搜索菜单采用官方紧凑间距、圆角、背景模糊和浮层阴影；实时性分段选项跟随宿主主题。
+- 修复主按钮悬停时文字颜色被覆盖的问题，改善窄屏表单与操作按钮换行，并尊重减少动态效果偏好。
+- 设置与选择器预览共用官方浅色／深色主题变量快照，更新界面截图。
+
+### DSH 0.1.7-rc.1 适配
+
+- 最低宿主版本提升至 `0.1.7-rc.1`，开发依赖固定到该版本；Cordis / Schemastery 对齐 volatile 配置能力。
+- 服务端改用 Loader `Volatile<T>.get()` 与 `internal/config` 校验，SettingsForms 只负责 profile 投影与 CAS 保存；移除 installSection 和直接写 settings.yaml 的旧逻辑。
+- 保留旧配置导入：跟随宿主 settings.yaml → profile 时序，先迁凭据再替换配置，失败保留旧值并可重试，不覆盖已有不同凭据。
+- 客户端设置迁移至 ConfigForms 和 plugins.bundle.config，使用 hooks/回调注入与 whileServed 生命周期；修复保存拒绝仍显示成功的问题。
+- 会话选择器使用类型化 modelSelection projection；跟随模型按公开目录中的实例 namespace/path 读取设置，不扫描废弃 session 事件。
+- Typert strict codec 改惰性 create()；集成测试迁移 PtcRuntime.resolve/run，保留 native/PTC 请求快照与并发隔离。
+- 更新真实 profile、交互、模型目录与发布包契约测试，配置示例改为 profile patch。
+
+### 升级边界
+
+- 配置格式仍为 version 2，搜索选择 Storage Domain 仍为 version 1；不迁移或重写宿主 Session 日志。
+- 跟随模式仍有受限 adapter identity/catalog 兼容 shim，不自动扩大到 OAuth/订阅认证；无法证明绑定时拒绝搜索，可用固定连接。
+- 本版本需重新加载服务端插件并刷新 Web 页面；不支持旧版 settingsScope/settings.plugin.item 宿主。
+
 ## [0.1.2] - 2026-09-22
 
 ### 新增与修复

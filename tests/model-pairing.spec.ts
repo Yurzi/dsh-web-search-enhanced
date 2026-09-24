@@ -9,7 +9,7 @@ import {
   resolveDefaultCacheDir,
 } from '../src/dsh/model-pairing-store.ts'
 import type { Context } from '@deepseek-ai/cordis'
-import type { SessionModelAgent } from '../src/dsh/session-model.ts'
+import { sessionModelSelection, type SessionModelAgent } from '../src/dsh/session-model.ts'
 
 describe('ModelPairingStore', () => {
   let tempDir: string
@@ -132,18 +132,25 @@ describe('extractSessionModel', () => {
     expect(extractSessionModel(agent, ctx)).toEqual({ provider: 'test-p', model: 'test-m' })
   })
 
-  it('extracts from session snapshotEvents model/selection event', () => {
+  it('never scans deprecated history or resurrects an old consumed selection', () => {
+    const snapshotEvents = vi.fn(() => { throw new Error('deprecated reader') })
     const agent = {
-      session: {
-        snapshotEvents: () => [
-          { type: 'init' },
-          { type: 'model/selection', data: { provider: 'event-provider', model: 'event-model' } },
-        ],
-        requestHeader: () => undefined,
-      },
-    } as unknown as SessionModelAgent
+      session: { snapshotEvents, requestHeader: () => ({ config: { provider: 'committed-p', model: 'committed-m' } }) },
+    }
+    expect(extractSessionModel(agent)).toEqual({ provider: 'committed-p', model: 'committed-m' })
+    expect(snapshotEvents).not.toHaveBeenCalled()
+  })
 
-    expect(extractSessionModel(agent)).toEqual({ provider: 'event-provider', model: 'event-model' })
+  it('prefers pending intent over lastUsed only for pairing preferences', () => {
+    const agent: SessionModelAgent = { session: { requestHeader: () => ({ config: { provider: 'last-p', model: 'last-m' } }) } }
+    const ctx = { get: () => ({ stateOf: () => ({ pending: { provider: 'next-p', model: 'next-m' }, lastUsed: { provider: 'last-p', model: 'last-m' } }) }) } as unknown as Context
+    expect(extractSessionModel(agent, ctx)).toEqual({ provider: 'next-p', model: 'next-m' })
+    expect(sessionModelSelection(agent)).toEqual({ provider: 'last-p', model: 'last-m' })
+  })
+
+  it('does not fill an incomplete committed header with unrelated options', () => {
+    const agent: SessionModelAgent = { options: { provider: 'other', model: 'other-m' }, session: { requestHeader: () => ({ config: {} }) } }
+    expect(extractSessionModel(agent)).toBeUndefined()
   })
 
   it('extracts from requestHeader config', () => {

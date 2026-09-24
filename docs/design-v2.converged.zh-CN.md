@@ -1,4 +1,4 @@
-# 0.1.2 当前架构与实现边界
+# 0.1.3 当前架构与实现边界
 
 本文描述已存在的源码契约，不是未来设计提案或历史验收记录。为避免外部链接失效，保留原文件名。用户配置见[配置参考](configuration.zh-CN.md)，验证方法见[开发验证指南](v2-implementation.zh-CN.md)。
 
@@ -7,7 +7,7 @@
 插件为 DSH 原生 `web_search` 注册 `enhanced-search` provider。模型工具签名、结果结构和宿主访问控制不变；原生调用与 PTC 调用经过同一工具执行链。它不是第二套模型工具，不接管 `web_fetch`，不替换对话模型。
 
 ```text
-Settings + 内置 Catalog ── resolveSettings ───────────────┐
+Volatile Config + 内置 Catalog ── resolveSettings ───────────────┐
 DSH Storage Domain ── SessionSelections ────────────────┤
 实际 agent/request ── 按 agent + turn + step 捕获快照 ──┤
                                                        ↓
@@ -26,7 +26,7 @@ tools/execute 的 exec.agent → 私有 AsyncLocalStorage → enhanced-search
 
 | 模块 | 职责 |
 | --- | --- |
-| [src/index.ts](../src/index.ts) | 插件 schema、Settings 注册、显式迁移门禁、安装 bridge |
+| [src/index.ts](../src/index.ts) | volatile Config、profile SettingsForms 展示策略、迁移门禁、安装 bridge |
 | [src/catalog.ts](../src/catalog.ts) | 无秘密的稳定内置 ID、地址、默认引用和能力 |
 | [src/config.ts](../src/config.ts) | 稀疏合并、字段白名单、URL / 引用 / options 校验 |
 | [src/migration.ts](../src/migration.ts) | 纯旧配置转换，不读 Key、不写 Settings、不执行 fallback |
@@ -39,14 +39,14 @@ tools/execute 的 exec.agent → 私有 AsyncLocalStorage → enhanced-search
 | [src/adapters/mcp.ts](../src/adapters/mcp.ts) | 私有 keyless MCP 传输与结果解析 |
 | [src/protocols.ts](../src/protocols.ts) | 三种模型协议的请求构造和响应归一化 |
 | [src/remote-contract.ts](../src/remote-contract.ts) | 严格 Remote 请求 / 响应 schema 与调用描述符 |
-| [src/client/V2Settings.tsx](../src/client/V2Settings.tsx) | 当前连接设置界面、稀疏操作和显式导入 |
+| [src/client/V2Settings.tsx](../src/client/V2Settings.tsx) | ConfigForm hooks 注入、当前连接设置界面和稀疏操作 |
 | [src/client/SearchConnectionSelector.tsx](../src/client/SearchConnectionSelector.tsx) | 当前会话连接与实时性选择器 |
 
 `model-config.ts`、`provider.ts` 的 `createProvider` / `EnhancedSearchProvider` 是兼容固定配置辅助接口；安装版始终走 V2 bridge。旧辅助代码中的环境变量或 fallback 行为不能外推为安装版配置能力。
 
 ## 3. 配置和秘密分离
 
-当前设置格式为 version 2，包版本为 0.1.2。内置目录只做默认值；用户保存差异，不把目录整表复制到用户层。四种结构化内置连接默认 keyless，访问方式为显式选择，不根据已保存 Key 猜测。自定义连接只允许支持的 adapter 或固定模型协议；新 endpoint 需要信任确认。
+当前设置格式为 version 2，包版本为 0.1.3。内置目录只做默认值；用户保存差异，不把目录整表复制到用户层。四种结构化内置连接默认 keyless，访问方式为显式选择，不根据已保存 Key 猜测。自定义连接只允许支持的 adapter 或固定模型协议；新 endpoint 需要信任确认。
 
 内置结构化连接不能重定向地址或改变 adapter。自定义结构化连接只能使用个人 Key；固定模型总是需要显式信任。校验拒绝任意 headers/body、缓存参数、秘密字段等不受支持的 options。禁用连接也参与配置校验。
 
@@ -100,9 +100,9 @@ REST 共享 fetchJson，MCP 使用私有 Streamable HTTP 客户端；均有 90 �
 
 跟随模式并非自动复用宿主所有认证机制。优先读取实际 agent 请求头的完整 provider/model；仅请求头不存在才读同一 agent options，不补拼不完整路由。
 
-每个请求捕获 `llm-pi-ai.providers` 中的非秘密 api/baseURL/apiKeyEnv 及只读目录；只有协议 / 地址缺省才从经过形状检查的 adapter 目录补齐。显式配置不依赖该可选兼容入口。FollowRequest 按 provider/model 缓存解析结果，执行时核对 adapter 身份，替换后拒绝旧请求。实际模型选择在工具执行时解析，而 provider 设置保持请求时快照；不能把它简化成全局固定模型。
+每个请求通过公开 `llm.listConfigurableProviders()` 的 `settingsNs/settingsPath` 定位具体实例的 `settings.describe()` 值，捕获非秘密 api/baseURL/apiKeyEnv；不再调用已移除的 settings.get，也不固定假设实例名为 llm-pi-ai。公开目录未导出完整搜索 wire binding，因此仍保留受限的非公开 adapter identity/catalog 兼容 shim：只有协议 / 地址缺省才使用 catalog 补齐；任何路由都必须通过 adapter identity guard，shim 形状变化即拒绝跟随搜索，可改用显式固定连接。FollowRequest 按 provider/model 缓存解析结果，执行时核对 adapter 身份，替换后拒绝旧请求。实际模型选择在工具执行时解析，而 provider 设置保持请求时快照；不能把它简化成全局固定模型。
 
-不重建 scoped credential records，不读取 OAuth / 订阅秘密，不透传自定义 headers，不虚构 rc.2 不支持的 model 级 endpoint/API/凭据覆盖。协议受支持也不代表模型有服务端搜索能力。
+不重建 scoped credential records，不读取 OAuth / 订阅秘密，不透传自定义 headers，不透传 model 级 endpoint/API/凭据覆盖。协议受支持也不代表模型有服务端搜索能力。
 
 ## 8. 实时性和诊断
 
@@ -112,7 +112,7 @@ Firecrawl 的 fresh/realtime 映射为内联 scrapeOptions.maxAge（86400000 / 0
 
 ## 9. 客户端与非目标
 
-设置使用官方 `settings.plugin.item` 槽和 SettingsScope 路径操作；凭据使用宿主 Remote。会话选择器通过 `conversation.input.right` 追加槽，Remote 挂载后在独立注入作用域注册，不替换 composer / 模型槽，不抓取 DOM。
+设置使用官方 `plugins.bundle.config` 槽（key 为包名）和 ConfigForms / ConfigForm 路径操作，`whileServed` 管理宿主表单上下线；只向渲染器传递 hooks source 和绑定回调，不直接传入服务对象。`mutate` 返回 false 时保留草稿，不显示保存成功；凭据使用宿主 Remote。会话选择器用标准 `useProjection("modelSelection")` 订阅模型变更，移除 sessions unknown / binding 猜测；通过 `conversation.input.right` 追加槽，Remote 挂载后在独立注入作用域注册，不替换 composer / 模型槽，不抓取 DOM。
 
 选择器只列本地可用连接并隐藏空组，但保留不可用的当前选择以供显式修复；使用原生 popover、键盘导航、Esc 与焦点恢复。主题使用宿主 `--dsw-alias-*` 令牌。空白会话首消息前没有独立选择器，靠默认连接初始化。
 

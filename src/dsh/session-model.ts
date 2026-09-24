@@ -1,4 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-llm'
 import type { FixedBinding } from '../config.ts'
 import { endpoint, reference } from '../config.ts'
 import type { SearchProtocol } from '../protocols.ts'
@@ -13,8 +15,6 @@ interface Route {
 }
 /** Only allowlisted, nonsecret facts enter the request snapshot. */
 export interface FollowSettings { readonly providers: Readonly<Record<string, Readonly<Route>>> }
-interface LlmDirectory { registration(provider: string): { adapter: unknown } }
-interface SettingsReader { get(namespace: string): unknown }
 const object = (v: unknown): Record<string, unknown> | undefined => v !== null && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : undefined
 const string = (v: unknown): string | undefined => typeof v === 'string' && v.trim() ? v.trim() : undefined
 export class FollowModelError extends Error {
@@ -64,25 +64,46 @@ function catalogOf(adapter: unknown, provider: string): Route['catalog'] {
   } catch { /* a missing optional catalog is handled by normal binding validation */ }
   return Object.freeze(catalog)
 }
+/** Compatibility boundary, NOT a public LlmRuntime API.
+ * The public directory exposes route metadata but no adapter identity or wire
+ * binding. Retain the target version's private registration shape only for the
+ * existing identity guard/catalog shim; an unavailable shape disables follow
+ * search rather than silently dropping replacement protection.
+ */
+function adapterIdentity(llm: unknown, provider: string): object {
+  const registration = object(llm)?.registration
+  if (typeof registration !== 'function') return fail('宿主无法提供会话 adapter 身份；请使用固定搜索连接')
+  const entry: unknown = registration.call(llm, provider)
+  const adapter = object(object(entry)?.adapter)
+  if (!adapter) return fail('宿主无法提供会话 adapter 身份；请使用固定搜索连接')
+  return adapter
+}
 export interface CapturedFollowSettings {
   readonly settings: FollowSettings
   /** Kept separately from cloneable facts; verifies adapter replacement, not secrets. */
   assertAdapter(provider: string): void
 }
 export function captureFollowSettings(ctx: Context): CapturedFollowSettings {
-  const settings = ctx.get('settings') as SettingsReader | undefined
-  const llm = ctx.get('llm') as LlmDirectory | undefined
-  const profiles = object(object(settings?.get('llm-pi-ai'))?.providers) ?? {}
+  const settings = ctx.get('settings')
+  const llm = ctx.get('llm')
+  // Namespace is a Loader entry id, not an adapter package's fixed name.
+  // Read unredacted Host forms only to reject unsupported auth; snapshots below
+  // retain the same nonsecret allowlist as fixed connections.
+  const forms = new Map(settings?.describe().map(form => [String(form.ns), form.value]) ?? [])
   const routes: Record<string, Readonly<Route>> = Object.create(null)
-  const adapters = new Map<string, unknown>()
-  for (const [provider, value] of Object.entries(profiles)) {
+  const adapters = new Map<string, object>()
+  const registered = new Set(llm?.listProviders().map(provider => provider.id) ?? [])
+  for (const { provider, settingsNs, settingsPath } of llm?.listConfigurableProviders() ?? []) {
+    const value = settingsPath.reduce<unknown>((parent, key) => {
+      const record = object(parent)
+      return record && Object.hasOwn(record, key) ? record[key] : undefined
+    }, forms.get(settingsNs))
     const profile = object(value)
-    if (!profile) { routes[provider] = { catalog: {}, error: '会话 provider 配置非法' }; continue }
-    let adapter: unknown
-    if (llm?.registration) {
-      try { adapter = llm.registration(provider).adapter } catch { routes[provider] = { catalog: {}, error: '会话 provider 已不在宿主注册目录中' }; continue }
-      adapters.set(provider, adapter)
-    }
+    if (!profile) { routes[provider] = { catalog: {}, error: '会话 provider 配置不可用' }; continue }
+    if (!registered.has(provider)) { routes[provider] = { catalog: {}, error: '会话 provider 已不在宿主注册目录中' }; continue }
+    let adapter: object
+    try { adapter = adapterIdentity(llm, provider) } catch { routes[provider] = { catalog: {}, error: '宿主无法确认会话 adapter 身份；请使用固定搜索连接' }; continue }
+    adapters.set(provider, adapter)
     const rawApi = string(profile.api)
     const api = searchProtocolOf(rawApi) ? rawApi : undefined
     let baseURL: string | undefined, credentialRef: string | undefined, error: string | undefined
@@ -97,7 +118,7 @@ export function captureFollowSettings(ctx: Context): CapturedFollowSettings {
       if (!Array.isArray(profile.models)) error = '会话 models 配置非法'
       else models = profile.models.map(m => string(object(m)?.id)).filter((id): id is string => id !== undefined)
     }
-    // rc.2 model entries/overrides cannot override route endpoint, API or credential.
+    // Follow search does not accept model-level endpoint, API or credential overrides.
     const overrides = [...(Array.isArray(profile.models) ? profile.models : []), ...Object.values(object(profile.modelOverrides) ?? {})]
     if (overrides.some(m => ['api','baseURL','apiKeyEnv','apiKey','headers'].some(k => Object.hasOwn(object(m) ?? {}, k)))) error = '当前宿主不支持 model 级 endpoint、协议或认证覆盖'
     routes[provider] = Object.freeze({ ...(api ? { api } : {}), ...(baseURL ? { baseURL } : {}), ...(credentialRef ? { credentialRef } : {}),
@@ -107,14 +128,14 @@ export function captureFollowSettings(ctx: Context): CapturedFollowSettings {
     settings: Object.freeze({ providers: Object.freeze(routes) }),
     assertAdapter(provider) {
       if (!adapters.has(provider)) return
-      try { if (llm?.registration(provider).adapter === adapters.get(provider)) return } catch { /* unavailable */ }
+      try { if (adapterIdentity(llm, provider) === adapters.get(provider)) return } catch { /* unavailable */ }
       fail('会话模型 adapter 已替换或移除；请发起新的模型请求')
     },
   }
 }
 export function resolveFollowBinding(settings: FollowSettings, selection: Required<ModelSelection>): FixedBinding {
   const route = settings.providers[selection.provider]
-  if (!route) return fail('当前 provider 未配置在 llm-pi-ai 中；不能解析为 API Key 搜索连接')
+  if (!route) return fail('当前 provider 没有可用的宿主配置；不能解析为 API Key 搜索连接')
   if (route.error) return fail(route.error)
   if (route.models && !route.models.includes(selection.model)) return fail('当前模型已不在此 provider 的显式 models 列表中')
   const model = route.catalog[selection.model]

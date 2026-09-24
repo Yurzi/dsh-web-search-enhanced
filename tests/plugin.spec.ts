@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { Config, DEFAULT_API_KEY_ENV, DEFAULT_PROVIDER_ID, inject, name, resolveConfig, resolveSettings } from '../src/index.ts'
+import { Config, readConfig, DEFAULT_API_KEY_ENV, DEFAULT_PROVIDER_ID, inject, name, resolveConfig, resolveSettings } from '../src/index.ts'
 import { ExecutionContexts } from '../src/dsh/execution-context.ts'
 import { executeSearch } from '../src/search/service.ts'
 import type { FixedBinding } from '../src/config.ts'
@@ -11,7 +11,7 @@ const modelResponse = () => new Response(JSON.stringify({output:[{type:'web_sear
 describe('V2 host and model contracts', () => {
  it('exports one stable provider and an unmaterialized schema', () => {
   expect(name).toBe('web-search-enhanced');expect(inject).toEqual(['web']);expect(DEFAULT_PROVIDER_ID).toBe('enhanced-search')
-  expect(Config({})).toEqual({connections:{}});expect(resolveConfig({}).apiKeyEnv).toBe(DEFAULT_API_KEY_ENV)
+  expect(readConfig(Config({}))).toEqual({connections:{}});expect(resolveConfig({}).apiKeyEnv).toBe(DEFAULT_API_KEY_ENV)
  })
  it('preserves checked-in protocol-specific identifiers', () => {
   expect(resolveConfig({}).toolIdentifier).toBe('web_search_20260209')

@@ -1,27 +1,27 @@
-# 升级到 0.1.0
+# 升级到 0.1.3 / DSH 0.1.7-rc.1
 
-0.1.0 将旧版全局搜索模型配置重构为**会话级搜索连接**。包版本 0.1.0、设置格式 version 2、会话 Storage Domain version 1 是三个不同概念。完整参数见[配置参考](configuration.zh-CN.md)。
+0.1.3 将最低宿主版本提高为 **0.1.7-rc.1**，对齐 Loader 动态配置、profile-backed SettingsForms、ConfigForms 客户端、惰性 Typert codec 和新版 PTC。旧版已采用的**会话级搜索连接**保持不变：包版本 0.1.3、设置格式 version 2、会话 Storage Domain version 1 是三个不同概念。完整参数见[配置参考](configuration.zh-CN.md)。
 
 ## 1. 升级前准备
 
-- 确认 DSH 满足 `>=0.1.5-rc.2`，Node 满足 `^22.19.0 || >=24.0.0`。实现基线是 rc.2 契约，不代表对所有未来宿主版本均完成验证。
+- 确认 DSH 满足 `>=0.1.7-rc.1`，Node 满足 `^22.19.0 || >=24.0.0`。实现基线是 0.1.7-rc.1 契约，不代表对所有未来宿主版本均完成验证。
 - 备份当前插件版本、Web profile / 插件配置和 DSH 持久存储。凭据使用宿主安全备份方式，不复制到公开 Issue 或仓库。
 - 记录旧 `modelMode`、协议、模型、endpoint、凭据引用，以及希望保留的会话选择。
-- 如旧配置存在非空明文 `apiKey`，**先移到 DSH Credentials，并从配置来源删除**。新插件验证阶段即拒绝明文 Key；如果因此无法挂载设置页，需先在原配置来源处理，不能指望导入按钮替你搬运秘密。
+- 推荐升级前先将明文 `apiKey` 移到 DSH Credentials 并从配置来源删除。兼容导入仅允许旧格式短暂携带 Key：先验证转换结果，再写 Credentials，最后 CAS 替换 profile 配置。V2 配置仍拒绝明文 Key；已有不同值的同名凭据不会被自动覆盖。
 - 自定义 `providerId` 不再支持；安装版固定为 `enhanced-search`。检查旧 Web profile 的 searchProvider 配置和重复安装。
 
 ## 2. 安装发行包
 
-从 [v0.1.0 Release](https://github.com/Yurzi/dsh-web-search-enhanced/releases/tag/v0.1.0) 下载构建好的 `dsh-web-search-enhanced-0.1.0.tgz`，使用绝对路径交给 DSH 插件管理器：
+从当前源码运行 `pnpm install --frozen-lockfile && pnpm run check && pnpm pack`，或使用 [Releases](https://github.com/Yurzi/dsh-web-search-enhanced/releases) 中实际发布的 0.1.3 构建包。使用绝对路径交给 DSH 插件管理器：
 
 ```sh
-dsh plugin --profile web add /absolute/path/to/dsh-web-search-enhanced-0.1.0.tgz
+dsh plugin --profile web add /absolute/path/to/dsh-web-search-enhanced-0.1.3.tgz
 ```
 
 若该版本已在 npm 发布，也可安装固定版本：
 
 ```sh
-dsh plugin --profile web add dsh-web-search-enhanced@0.1.0
+dsh plugin --profile web add dsh-web-search-enhanced@0.1.3
 ```
 
 发布附件中的构建 tgz 与 GitHub 自动生成的 Source code archive 不同：后者是源码，不能假定含 `lib/` 构建产物。npm 可用性须以 registry 实际发布结果为准，GitHub 标签 / Release 存在不代表 npm 已完成。
@@ -32,7 +32,7 @@ dsh plugin --profile web add dsh-web-search-enhanced@0.1.0
 
 ## 3. 启动时自动迁移旧配置
 
-插件现在只保留启动时自动迁移，不再提供命令行迁移脚本或设置页手动导入入口。检测到旧版配置后，插件会在设置注册阶段尝试迁移；迁移成功后写入 V2 连接结构，搜索请求仍会对未完成迁移的配置 fail-closed，并提示检查设置。
+插件不再自行注册 Settings section 或直接改写 settings.yaml。DSH 0.1.7 在 Loader 就绪后将旧 settings.yaml 重命名为 settings.yaml.imported，并尝试导入到 profile 条目；插件监听该条目的表单 / volatile 更新，再迁移成 V2 连接结构。保存使用 revision CAS，不能覆盖并发编辑。新旧宿主的配置持久化架构不同，不应只修改版本号或复制整份旧 YAML 到 profile。未完成迁移时搜索 fail-closed，普通聊天不因此被替换或阻断。
 
 自动迁移覆盖以下旧字段：
 
@@ -53,7 +53,7 @@ dsh plugin --profile web add dsh-web-search-enhanced@0.1.0
 
 自动迁移不会覆盖已有会话的搜索选择，也不会自动切换新连接。迁移完成后请重新加载插件或重启 DSH，再刷新 Web 页面；已有会话如需使用迁移后的连接，应在会话搜索选择器中显式选择。
 
-如果迁移失败，请先将明文 Key 移入 DSH Credentials，并检查旧配置中的 endpoint、模型协议和 credential 引用。插件不会提供独立迁移命令，也不会创建配置文件备份；进行升级前请由宿主或部署系统负责备份 `settings.yaml`。
+如果迁移失败，请检查 Credentials、endpoint、协议和引用，并保留 profile 与 settings.yaml.imported。已成功进入 profile 的旧值会在插件重启后重试；凭据服务重新挂载也会触发重试。宿主拒绝导入的 section 可能只留在 settings.yaml.imported，宿主不会再次自动导入：需修正该 section 后通过宿主 profile 配置编辑器恢复到对应条目的 config，再重启。不要把含 Key 的备份上传 Issue。插件不删除 .imported 备份，也不能清除继承 bundle 中的秘密，请在确认迁移后自行安全处理原始配置/备份。升级前由部署系统备份 settings.yaml、profile patch 与持久存储。
 
 ## 4. 从重构预览版升级
 

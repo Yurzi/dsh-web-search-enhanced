@@ -8,6 +8,9 @@ import { EnhancedSearchProvider, resolveConfig } from '../src/index.ts'
 
 interface Manifest {
   readonly name: string
+  readonly engines: { dsh: string }
+  readonly peerDependencies: Record<string, string>
+  readonly devDependencies: Record<string, string>
   readonly files: readonly string[]
   readonly exports: Record<string, unknown>
   readonly dsh?: {
@@ -33,6 +36,17 @@ function readClientBundle(): string | undefined {
 }
 
 describe('installable DSH profile bundle', () => {
+  it('requires DSH 0.1.7-rc.1 and builds against that exact prerelease', () => {
+    expect(manifest.engines.dsh).toBe('>=0.1.7-rc.1')
+    for (const [name, range] of Object.entries(manifest.peerDependencies)) {
+      if (name.startsWith('@deepseek-ai/dsh-')) expect(range).toBe('^0.1.7-rc.1')
+    }
+    for (const [name, version] of Object.entries(manifest.devDependencies)) {
+      if (name.startsWith('@deepseek-ai/dsh-')) expect(version).toBe('0.1.7-rc.1')
+    }
+    expect(manifest.devDependencies).not.toHaveProperty('@deepseek-ai/dsh-code-runtime')
+    expect(manifest.dsh?.client?.inject).toContain('@deepseek-ai/dsh-client-ui-session')
+  })
   it('publishes built artifacts and bundle configuration', () => {
     expect(manifest.name).toBe('dsh-web-search-enhanced')
     expect(manifest.files).toContain('cordis.patch.yml')
@@ -41,7 +55,7 @@ describe('installable DSH profile bundle', () => {
     expect(manifest.exports).toHaveProperty('./client')
     expect(manifest.files).toContain('lib/client.js')
     expect(manifest.dsh?.client?.platform).toBe('web')
-    expect(manifest.dsh?.client?.inject).toContain('@deepseek-ai/dsh-client-ui-settings-plugins')
+    expect(manifest.dsh?.client?.inject).toContain('@deepseek-ai/dsh-client-ui-plugin-manager')
     expect(manifest.dsh?.client?.inject).toContain('@deepseek-ai/dsh-client-ui-commands')
   })
 
@@ -84,7 +98,7 @@ describe('installable DSH profile bundle', () => {
 
     expect(new Set(requested)).toEqual(new Set(['react', 'react/jsx-runtime']))
     expect(exports.apply).toBeTypeOf('function')
-    expect(exports.inject).toEqual(['slots', 'locale', 'settingsScope', 'remote', 'remote.credentials'])
+    expect(exports.inject).toEqual(['slots', 'locale', 'configForms', 'remote', 'remote.credentials'])
   })
 
   it('allows seamless fetch auto-selection when fetchProvider is omitted in WebRuntime config', async () => {

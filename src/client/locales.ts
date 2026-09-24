@@ -1,4 +1,13 @@
 export const en = {
+  connectionsDescription: 'Manage session search connections, credential references and freshness preferences.',
+  search: 'Search', followModel: 'Follow model', connectionUnavailable: 'Connection unavailable', selectSearch: 'Select search',
+  searchConnection: 'Search connection: ', notSelected: 'Not selected', sessionSearchSettings: 'Current session search settings',
+  modelSearch: 'Model search', searchServices: 'Search services', sessionFreshness: 'Current session content freshness', freshness: 'Content freshness',
+  freshnessAuto: 'Auto', freshnessFresh: 'Prefer fresh', freshnessRealtime: 'Prefer realtime', freshnessFreshShort: 'Fresh', freshnessRealtimeShort: 'Realtime',
+  retry: 'Retry', selectionReadFailed: 'Failed to read search connections. Please retry.',
+  selectionSaved: 'Saved; applies to the next model request.', selectionRefreshed: ' (Refresh requested; check and retry.)',
+  selectionWriteFailed: 'Save failed; the switch is unconfirmed. Refresh and check before retrying.',
+
   title: 'Web Search Enhanced',
   description: 'Choose the model route and built-in search settings used by web_search.',
   expand: 'Expand', collapse: 'Collapse', unsaved: 'Unsaved',
@@ -32,6 +41,15 @@ export const en = {
 } as const
 export type LocaleKey = keyof typeof en
 export const zh: Record<LocaleKey, string> = {
+  connectionsDescription: '管理会话搜索连接、凭据引用与内容实时性偏好',
+  search: '搜索', followModel: '跟随模型', connectionUnavailable: '连接失效', selectSearch: '选择搜索',
+  searchConnection: '搜索连接：', notSelected: '未选择', sessionSearchSettings: '当前会话搜索设置',
+  modelSearch: '模型搜索', searchServices: '搜索服务', sessionFreshness: '当前会话内容实时性', freshness: '内容实时性',
+  freshnessAuto: '自动', freshnessFresh: '优先新鲜', freshnessRealtime: '优先实时', freshnessFreshShort: '新鲜', freshnessRealtimeShort: '实时',
+  retry: '重试', selectionReadFailed: '读取搜索连接失败，请重试。',
+  selectionSaved: '已保存，下一次模型请求生效。', selectionRefreshed: '（已请求刷新，请核对后重试。）',
+  selectionWriteFailed: '保存失败，未确认切换；请刷新核对后重试。',
+
   title: 'Web Search Enhanced',
   description: '配置 web_search 使用的模型路由与内置搜索参数。',
   expand: '展开', collapse: '折叠', unsaved: '未保存',

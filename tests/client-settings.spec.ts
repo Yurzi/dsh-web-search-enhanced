@@ -48,14 +48,15 @@ describe('settings card helpers', () => {
     const ctx: any = {
       inject: (keys: string[], fn: (scope: unknown) => unknown) => { expect(keys).toEqual(['remote.searchConnections']); return fn(ctx) },
       locale: { register: vi.fn() }, effect: (fn: () => unknown) => fn(),
-      settingsScope: { bind: () => ({}) },
+      configForms: { get: () => ({}), whileServed: (_names: string[], register: () => unknown) => register() },
       slots: { inject: (_name: string, fn: () => unknown) => fn(), register },
-      remote: { credentials: {}, $mount: mount },
+      remote: { credentials: {}, searchConnections: { get: vi.fn(), set: vi.fn() }, $mount: mount },
     }
     await apply(ctx as any)
     expect(mount).toHaveBeenCalledTimes(1)
-    expect(register.mock.calls.map(c => c[0].name)).toEqual(['settings.plugin.item','conversation.input.right'])
-    expect(register.mock.calls[1]?.[0].inject('a').sessionId).toBe('a')
+    expect(register.mock.calls.map(c => c[0].name)).toEqual(['plugins.bundle.config','conversation.input.right'])
+    await register.mock.calls[1]?.[0].inject('a').getSelection()
+    expect(ctx.remote.searchConnections.get).toHaveBeenCalledWith({ sessionId: 'a' })
   })
 
   describe('sparse configuration mutations (preventing settings.yaml bloat)', () => {

@@ -1,0 +1,86 @@
+/* Preview-only tokens from DeepSeek Harness (MIT), commit 46a7f68b09.
+ * Source: packages/client/ui-theme/src/styles/{design-platform,gradient-shadow-text}.css
+ * Runtime styles inherit these values from the host; this fixture is not bundled. */
+body[data-ds-dark-theme] {
+}
+body {
+  --dsw-alias-bg-base: rgb(255, 255, 255);
+  --dsw-alias-bg-layer-1: rgb(255, 255, 255);
+  --dsw-alias-bg-layer-2: rgb(255, 255, 255);
+  --dsw-alias-bg-layer-3: rgb(255, 255, 255);
+  --dsw-alias-bg-module-platform: rgb(245, 246, 247);
+  --dsw-alias-border-l1: rgba(0, 0, 0, 0.04);
+  --dsw-alias-border-l2: rgba(0, 0, 0, 0.1);
+  --dsw-alias-border-l3: rgba(0, 0, 0, 0.12);
+  --dsw-alias-border-l4: rgba(0, 0, 0, 0.16);
+  --dsw-alias-brand-primary: rgb(15, 17, 21);
+  --dsw-alias-button-elevated-fill: rgb(255, 255, 255);
+  --dsw-alias-button-ghost-active-border: rgb(151, 157, 166);
+  --dsw-alias-button-ghost-active-fill: rgb(235, 238, 242);
+  --dsw-alias-button-ghost-active-hover: rgb(233, 236, 242);
+  --dsw-alias-button-primary-fill: var(--dsw-alias-brand-primary);
+  --dsw-alias-button-primary-hover: rgb(67, 69, 74);
+  --dsw-alias-interactive-bg-active: rgba(38, 49, 72, 0.1);
+  --dsw-alias-interactive-bg-hover-danger: rgba(236, 19, 19, 0.05);
+  --dsw-alias-interactive-bg-hover: rgba(38, 49, 72, 0.06);
+  --dsw-alias-label-caption: rgb(173, 178, 184);
+  --dsw-alias-label-dimmed: rgb(225, 229, 238);
+  --dsw-alias-label-primary-foreground: rgb(255, 255, 255);
+  --dsw-alias-label-primary: rgb(15, 17, 21);
+  --dsw-alias-label-secondary: rgb(97, 102, 107);
+  --dsw-alias-label-tertiary: rgb(129, 133, 140);
+  --dsw-alias-scrollbar-bg-l2: rgb(229, 229, 229);
+  --dsw-alias-scrollbar-hover-l2: rgb(212, 212, 212);
+  --dsw-alias-state-business-primary: rgb(65, 118, 230);
+  --dsw-alias-state-error-primary: rgb(236, 19, 19);
+  --dsw-alias-state-success-primary: rgb(34, 197, 94);
+  --dsw-alias-state-success-tertiary: rgb(230, 250, 237);
+  --dsw-alias-state-warn-label: rgb(221, 134, 41);
+  --dsw-alias-state-warn-primary: rgb(245, 158, 11);
+  --dsw-specific-menu: rgba(248, 249, 250, 0.58);
+}
+body[data-ds-dark-theme] {
+  --dsw-alias-bg-base: rgb(21, 21, 23);
+  --dsw-alias-bg-layer-1: rgb(35, 35, 36);
+  --dsw-alias-bg-layer-2: rgb(44, 44, 46);
+  --dsw-alias-bg-layer-3: rgb(53, 54, 56);
+  --dsw-alias-bg-module-platform: rgb(53, 54, 56);
+  --dsw-alias-border-l1: rgba(255, 255, 255, 0.06);
+  --dsw-alias-border-l2: rgba(255, 255, 255, 0.12);
+  --dsw-alias-border-l3: rgba(255, 255, 255, 0.16);
+  --dsw-alias-border-l4: rgba(255, 255, 255, 0.2);
+  --dsw-alias-brand-primary: rgb(249, 250, 251);
+  --dsw-alias-button-elevated-fill: rgb(67, 69, 74);
+  --dsw-alias-button-ghost-active-border: rgb(129, 133, 140);
+  --dsw-alias-button-ghost-active-fill: rgb(67, 69, 74);
+  --dsw-alias-button-ghost-active-hover: rgb(97, 102, 107);
+  --dsw-alias-button-primary-fill: var(--dsw-alias-brand-primary);
+  --dsw-alias-button-primary-hover: rgb(235, 238, 242);
+  --dsw-alias-interactive-bg-active: rgba(255, 255, 255, 0.14);
+  --dsw-alias-interactive-bg-hover-danger: rgba(242, 90, 90, 0.15);
+  --dsw-alias-interactive-bg-hover: rgba(255, 255, 255, 0.08);
+  --dsw-alias-label-caption: rgb(129, 133, 140);
+  --dsw-alias-label-dimmed: rgb(67, 69, 74);
+  --dsw-alias-label-primary-foreground: rgb(15, 17, 21);
+  --dsw-alias-label-primary: rgb(249, 250, 251);
+  --dsw-alias-label-secondary: rgb(207, 211, 214);
+  --dsw-alias-label-tertiary: rgb(173, 178, 184);
+  --dsw-alias-scrollbar-bg-l2: rgb(84, 85, 87);
+  --dsw-alias-scrollbar-hover-l2: rgb(101, 103, 107);
+  --dsw-alias-state-business-primary: rgb(122, 170, 255);
+  --dsw-alias-state-error-primary: rgb(242, 90, 90);
+  --dsw-alias-state-success-primary: rgb(34, 197, 94);
+  --dsw-alias-state-success-tertiary: rgb(35, 60, 44);
+  --dsw-alias-state-warn-label: rgb(221, 134, 41);
+  --dsw-alias-state-warn-primary: rgb(245, 158, 11);
+  --dsw-specific-menu: rgba(48, 49, 54, 0.5);
+}
+body {
+  --dsw-menu-backdrop-filter: blur(40px) saturate(150%);
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l4);
+  color-scheme: light;
+}
+body[data-ds-dark-theme] { color-scheme: dark; }
+body, body * {
+  --dsw-elevation-prominent: 0 0 0 0.5px var(--dsw-elevation-stroke-color), 0 3px 8px 0 rgba(0, 0, 0, 0.04), 0 0 20px 0 rgba(0, 0, 0, 0.05);
+}

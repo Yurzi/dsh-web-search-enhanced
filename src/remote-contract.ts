@@ -12,7 +12,7 @@ export const searchContribution: TypertRemoteContribution = {
   package: 'dsh-web-search-enhanced',
   descriptors: (['get', 'set'] as const).map(method => ({
     id: 'dsh-web-search-enhanced:searchConnections/' + method, service: 'searchConnections', namespace: 'searchConnections', method,
-    invocation: { kind: 'direct' }, parameters: [{ name: 'request', wire: 'request', source: 'json', codec: { mode: 'strict', typeSymbol: 'SearchSelectionRequest', schema: method === 'get' ? getRequest : setRequest } }],
-    result: { mode: 'strict', typeSymbol: 'SearchSelectionView', schema: responseSchema },
+    invocation: { kind: 'direct' }, parameters: [{ name: 'request', wire: 'request', source: 'json', codec: { mode: 'strict', typeSymbol: 'SearchSelectionRequest', create: () => method === 'get' ? getRequest : setRequest } }],
+    result: { mode: 'strict', typeSymbol: 'SearchSelectionView', create: () => responseSchema },
   })),
 }

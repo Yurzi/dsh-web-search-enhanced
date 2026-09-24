@@ -1,5 +1,5 @@
-import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import { useEffect, useId, useRef, useState } from 'react'
+import type { SearchLocaleProps, SettingsFace } from './bindings.ts'
 import type { SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
 import YAML from 'yaml'
 import type { V2Config } from '../config.ts'
@@ -8,7 +8,7 @@ import { CATALOG, SESSION_MODEL_ID, SESSION_MODEL_LABEL } from '../catalog.ts'
 import { freshnessLabels } from './SearchConnectionSelector.tsx'
 import { v2CardCss } from './v2-settings.css.ts'
 
-export interface V2SettingsProps { scope: SettingsScope<V2Config>; credentials: CredentialRemote; defaultOpen?: boolean }
+export type V2SettingsProps = SettingsFace<V2Config> & SearchLocaleProps & { defaultOpen?: boolean }
 const object = (v: unknown): Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {}
 const equal = (a: unknown, b: unknown): boolean => {
   if (Object.is(a, b)) return true
@@ -59,7 +59,7 @@ export function parseConnectionDraft(id: string, text: string, consent: boolean)
   return config
 }
 /** Credential-only operation: never receives or mutates a settings scope. */
-export async function saveV2Credential(credentials: CredentialRemote, ref: string, value: string): Promise<void> {
+export async function saveV2Credential(credentials: Pick<CredentialRemote, 'set'>, ref: string, value: string): Promise<void> {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/u.test(ref) || !value.trim()) throw new Error('请填写有效凭据引用和非空 Key。')
   try {
     const result = await credentials.set(ref, value.trim())
@@ -70,8 +70,8 @@ const template = (kind: 'model' | 'structured') => YAML.stringify(kind === 'mode
   label: '专用搜索模型', kind, binding: { mode: 'fixed', protocol: 'openai-responses', model: 'search-capable-model', baseURL: 'https://gateway.example/v1', credentialRef: 'SEARCH_MODEL_API_KEY' }, options: {},
 } : { label: 'Exa 独立账号', kind, adapter: 'exa', endpoint: CATALOG['builtin:exa'].endpoint, credentialRef: 'EXA_WORK_API_KEY', options: {} })
 
-export function V2Settings({ scope, credentials, defaultOpen = false }: V2SettingsProps) {
-  const snapshot = useSyncExternalStore(scope.subscribe.bind(scope), scope.getSnapshot.bind(scope), scope.getSnapshot.bind(scope))
+export function V2Settings({ useSettings, mutateSettings, describeCredentials, setCredential, t, defaultOpen = false }: V2SettingsProps) {
+  const snapshot = useSettings(value => value)
   const config = snapshot.value ?? {}
   const [open, setOpen] = useState(defaultOpen)
   const [editor, setEditor] = useState<
@@ -111,13 +111,13 @@ export function V2Settings({ scope, credentials, defaultOpen = false }: V2Settin
   const refsKey = JSON.stringify(refs)
   useEffect(() => {
     let active = true
-    void credentials.describe(JSON.parse(refsKey) as string[]).then(result => {
+    void describeCredentials(JSON.parse(refsKey) as string[]).then(result => {
       if (!active) return
       if (result.ok) setStates(result.value)
       else setError('读取凭据状态失败：' + result.error.message)
     }).catch(() => { if (active) setError('读取凭据状态失败。') })
     return () => { active = false }
-  }, [credentials, refsKey, refresh])
+  }, [describeCredentials, refsKey, refresh])
 
   const disabled = busy || snapshot.status !== 'ready' || !snapshot.writable || snapshot.revision === undefined
   const close = () => { setEditor(null); setKeyValue(''); setMailtoValue(''); setConsent(false) }
@@ -130,7 +130,7 @@ export function V2Settings({ scope, credentials, defaultOpen = false }: V2Settin
   }
   const mutate = async (ops: SettingsPathOpView[], revision = snapshot.revision) => {
     if (revision === undefined) throw new Error('尚未取得设置版本，请稍后重试。')
-    if (ops.length) await scope.mutate(ops, revision)
+    if (ops.length && !await mutateSettings(ops, revision)) throw new Error(t('failed'))
   }
   const openConnection = (kind: 'model' | 'structured', id?: string) => {
     if (snapshot.revision === undefined) return
@@ -159,10 +159,10 @@ export function V2Settings({ scope, credentials, defaultOpen = false }: V2Settin
 
   const renderKeyEditor = (id: string, ref: string) => (editor?.type === 'key' && editor.connectionId === id ? (
                     <div className="v2s-inline-key-panel" role="region" aria-label={'凭据配置：' + ref}>
-                      <div className="v2s-inline-key-head"><strong className="v2s-inline-key-title"><span className="v2s-inline-key-icon">🔐</span>配置凭据 <code>{ref}</code></strong><span className="v2s-inline-key-sub">仅保存到 DSH Credentials</span></div>
+                      <div className="v2s-inline-key-head"><strong className="v2s-inline-key-title"><svg className="v2s-inline-key-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3" /></svg>配置凭据 <code>{ref}</code></strong><span className="v2s-inline-key-sub">仅保存到 DSH Credentials</span></div>
                       <div className="v2s-inline-key-input-row">
                         <input className="v2s-input v2s-inline-key-input" aria-label={'API Key：' + ref} type="password" autoComplete="new-password" placeholder="输入新的 API Key…" value={keyValue} disabled={states[ref]?.writable === false || busy} onChange={e => setKeyValue(e.target.value)} />
-                        <div className="v2s-inline-key-actions"><button type="button" className="v2s-btn" disabled={busy} onClick={close}>取消</button><button type="button" className="v2s-btn v2s-btn-primary" disabled={!keyValue.trim() || states[ref]?.writable === false || busy} onClick={() => { const secret = keyValue; void act(async () => { await saveV2Credential(credentials, ref, secret); if (alive.current) { setKeyValue(''); setRefresh(n => n + 1) } }, '凭据已保存；连接选择未改变。') }}>保存 Key</button></div>
+                        <div className="v2s-inline-key-actions"><button type="button" className="v2s-btn" disabled={busy} onClick={close}>取消</button><button type="button" className="v2s-btn v2s-btn-primary" disabled={!keyValue.trim() || states[ref]?.writable === false || busy} onClick={() => { const secret = keyValue; void act(async () => { await saveV2Credential({ set: setCredential }, ref, secret); if (alive.current) { setKeyValue(''); setRefresh(n => n + 1) } }, '凭据已保存；连接选择未改变。') }}>保存 Key</button></div>
                       </div>
                       {states[ref]?.writable === false ? <p className="v2s-hint v2s-status-error">此凭据来源只读，请通过宿主凭据配置管理。</p> : null}
                     </div>
@@ -256,12 +256,12 @@ export function V2Settings({ scope, credentials, defaultOpen = false }: V2Settin
         className="v2s-header"
         aria-expanded={open}
         aria-controls={bodyId}
-        aria-label={(open ? '折叠' : '展开') + ': Web Search Enhanced'}
+        aria-label={t(open ? 'collapse' : 'expand') + ': ' + t('title')}
         onClick={() => setOpen(v => !v)}
       >
         <span className="v2s-head-text">
-          <span className="v2s-title">Web Search Enhanced</span>
-          <span className="v2s-desc">管理会话搜索连接、凭据引用与内容实时性偏好</span>
+          <span className="v2s-title">{t('title')}</span>
+          <span className="v2s-desc">{t('connectionsDescription')}</span>
         </span>
         <span className="v2s-header-meta">
           {busy ? <span className="v2s-badge v2s-badge-busy">正在保存…</span> : null}

@@ -10,7 +10,7 @@
 
 [![Release](https://img.shields.io/github/v/release/Yurzi/dsh-web-search-enhanced?style=flat-square)](https://github.com/Yurzi/dsh-web-search-enhanced/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](LICENSE)
-[![DSH](https://img.shields.io/badge/DSH-0.1.5--rc.2%2B-536DFE?style=flat-square)](package.json)
+[![DSH](https://img.shields.io/badge/DSH-0.1.7--rc.1%2B-536DFE?style=flat-square)](package.json)
 [![Node.js](https://img.shields.io/badge/Node.js-22.19%2B%20%7C%2024%2B-green?style=flat-square)](package.json)
 
 [🚀 快速上手](#-快速上手) · [✨ 核心特性](#-核心特性) · [🔍 搜索引擎推荐](#-选哪种搜索服务) · [⚙️ 进阶配置](#️-进阶配置与个人-key) · [❓ 常见问题](#-常见问题-faq) · [📖 详细文档](#-想了解更多)
@@ -60,25 +60,27 @@
 
 ### 环境要求
 
-- **DeepSeek Harness**：≥ `0.1.5-rc.2`
+- **DeepSeek Harness**：≥ `0.1.7-rc.1`
 - **Node.js**：`^22.19.0 || >=24.0.0`
+
+本版已对齐 DSH 0.1.7-rc.1 的动态配置、插件设置页和会话 projection 架构，详见[上游适配记录](docs/upstream-0.1.7-adaptation.zh-CN.md)。升级前请备份 profile 和旧设置。
 
 ### 步骤 1：安装插件
 
 **方式 A：通过 GitHub Release 离线包安装（推荐）**
 
-从 [v0.1.2 Release](https://github.com/Yurzi/dsh-web-search-enhanced/releases/tag/v0.1.2) 下载预构建包 `dsh-web-search-enhanced-0.1.2.tgz`，执行绝对路径安装命令：
+当前版本为 **0.1.3**，最低支持 **DSH 0.1.7-rc.1**。从 [v0.1.3 Release](https://github.com/Yurzi/dsh-web-search-enhanced/releases/tag/v0.1.3) 下载安装包及 SHA256 校验文件；也可执行 `pnpm install --frozen-lockfile && pnpm run check && pnpm pack` 自行构建。使用绝对路径安装：
 
 ```sh
-dsh plugin --profile web add /path/to/dsh-web-search-enhanced-0.1.2.tgz
+dsh plugin --profile web add /path/to/dsh-web-search-enhanced-0.1.3.tgz
 ```
 
 **方式 B：通过 npm 在线安装**
 
-在版本已发布到 npm 仓库后，也可直接安装：
+也可从 npm 直接安装：
 
 ```sh
-dsh plugin --profile web add dsh-web-search-enhanced@0.1.2
+dsh plugin --profile web add dsh-web-search-enhanced@0.1.3
 ```
 
 ### 步骤 2：生效与刷新
@@ -181,7 +183,7 @@ _注：实时抓取可能会稍微增加检索耗时与额度消耗；对于不�
 **不会**。Web Search Enhanced 是完全**会话隔离**的：
 
 - 修改当前会话的搜索连接，不会影响已经存在的其他会话。
-- Fork（分支）出的新会话会继承分支那一刻的搜索设置，之后两者独立变更，互不干扰。
+- Fork（分支）出的新会话在首次初始化时继承父会话当前搜索设置，之后两者独立变更；不重建历史 fork 切点的搜索设置。
 
 </details>
 
@@ -198,7 +200,7 @@ _注：实时抓取可能会稍微增加检索耗时与额度消耗；对于不�
 | 文档                                                     | 适合谁读            | 主要内容                                                          |
 | :------------------------------------------------------- | :------------------ | :---------------------------------------------------------------- |
 | 📘 **[配置指南](docs/configuration.zh-CN.md)**           | 所有用户 / 进阶用户 | 完整参数列表、凭据机制、高级 options 白名单、自定义端点与排错字典 |
-| 📙 **[升级指南](docs/migration.zh-CN.md)**               | 从旧版升级的老用户  | 0.1.0 架构变化、旧版导入指引、升级踩坑预防                        |
+| 📙 **[升级指南](docs/migration.zh-CN.md)**               | 从旧版升级的老用户  | 0.1.7 宿主适配、旧版导入指引、升级踩坑预防                        |
 | 📗 **[架构设计说明](docs/design-v2.converged.zh-CN.md)** | 开发者 / 架构爱好者 | 会话状态隔离、请求快照机制、多适配器与安全性设计                  |
 | 🛠️ **[开发与验证文档](docs/v2-implementation.zh-CN.md)** | 插件二次开发者      | 本地构建、单元测试、浏览器环境验证与打包发布                      |
 | 📝 **[更新日志](CHANGELOG.md)**                          | 所有人              | 版本演进记录与历史变更                                            |

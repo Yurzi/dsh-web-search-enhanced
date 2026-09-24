@@ -1,11 +1,14 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
-import { SearchConnectionSelector } from '../../src/client/SearchConnectionSelector.tsx'
+import { SearchConnectionSelector, type SearchConnectionRemote, type SearchConnectionSelectorProps } from '../../src/client/SearchConnectionSelector.tsx'
+import { selectionInjection } from '../../src/client/bindings.ts'
+import { zh, type LocaleKey } from '../../src/client/locales.ts'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 const connections=[{id:'builtin:session-model',label:'跟随会话模型',kind:'model',configured:true},{id:'builtin:exa',label:'Exa',kind:'structured',configured:true},{id:'builtin:firecrawl',label:'Firecrawl',kind:'structured',configured:true},{id:'builtin:tavily',label:'Tavily',kind:'structured',configured:false,reason:'UNAVAILABLE_DETAIL_SHOULD_NOT_RENDER'},{id:'builtin:tinyfish',label:'Tinyfish',kind:'structured',configured:false}]
 let state={selection:{connectionId:'builtin:session-model',revision:0},freshness:'auto',connections}
 const writes:any[]=[]
 const remote={get:async()=>({ok:true,value:structuredClone(state)}),set:async(request:any)=>{writes.push(request);if(request.connectionId!==undefined)state.selection.connectionId=request.connectionId;if(request.freshness!==undefined)state.freshness=request.freshness;state.selection.revision++;return {ok:true,value:structuredClone(state)}}}
-createRoot(document.getElementById('picker')!).render(<SearchConnectionSelector sessionId="fixture-session" remote={remote as any}/>)
+createRoot(document.getElementById('picker')!).render(<SearchConnectionSelector {...({sessionId: "fixture-session" as SessionId, ...selectionInjection(remote as SearchConnectionRemote, "fixture-session"), useProjection: () => undefined, t: (key: string) => zh[key as LocaleKey] ?? key} as SearchConnectionSelectorProps)}/>)
 const tick=()=>new Promise(r=>setTimeout(r,30))
 const results:string[]=[]
 function check(ok:any,name:string){if(!ok)throw Error(name);results.push(name)}

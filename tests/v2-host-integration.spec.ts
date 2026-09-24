@@ -17,7 +17,7 @@ import Gateway from '@deepseek-ai/dsh-api-gateway'
 import SessionController from '@deepseek-ai/dsh-api-session-controller'
 import { Session, type SessionId } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { CodeRuntime, type CodeRunRequest, type CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
+import { PtcRuntime, type PtcRunRequest, type PtcRunSpec, type PtcRunResult } from '@deepseek-ai/dsh-ptc-runtime'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { installBridge } from '../src/dsh/bridge.ts'
@@ -37,11 +37,15 @@ const config: V2Config = { version: 2, defaultConnection: 'custom:a', connection
 
 // The real PTC transport supplies and schedules the SDK binding. This deliberately
 // replaces ONLY the code substrate, not tools.execute or the PTC sub-dispatch path.
-class FixtureCodeRuntime extends CodeRuntime {
+class FixturePtcRuntime extends PtcRuntime {
   readonly language = 'typescript'
   readonly isolation = 'test-fixture'
-  requests: CodeRunRequest[] = []
-  async run(request: CodeRunRequest): Promise<CodeRunResult> {
+  requests: PtcRunSpec[] = []
+  resolve(request: PtcRunRequest): PtcRunSpec {
+    if (request.sandboxPolicy !== undefined) throw new Error('Fixture does not implement confinement')
+    return { ...request, cwd: request.cwd ?? process.cwd(), timeoutMs: request.timeoutMs === undefined ? 30_000 : request.timeoutMs }
+  }
+  async run(request: PtcRunSpec): Promise<PtcRunResult> {
     this.requests.push(request)
     const tools = request.bindings.find(binding => binding.global === 'tools')!
     return { logs: [], value: await tools.functions.web_search!({ queries: ['ptc one', 'ptc two'] }) }
@@ -77,7 +81,7 @@ async function host(root?: string, mode: 'native' | 'ptc' = 'native', deferStora
   const credentials = { describe: vi.fn(async () => ({ configured: true })), resolve: vi.fn(async (_ref: unknown): Promise<{ value: string } | undefined> => ({ value: 'fixture-secret-not-a-key' })) }
   ctx.provide('credentials', credentials as never)
   ctx.provide('systemPrompt', { tools: () => () => {}, section: () => () => {}, getSectionOrder: () => 0 } as never)
-  const substrate = new FixtureCodeRuntime(ctx)
+  const substrate = new FixturePtcRuntime(ctx)
   new ToolRuntime(ctx, { mode })
   await ctx.plugin(ToolWeb, { search: true, fetch: false }).await()
   if (legacy) {
@@ -246,6 +250,7 @@ describe('V2 installed DSH host integration (no network)', () => {
     const result = await h.execute('one', 'run_code', { code: 'return await tools.web_search({ queries: ["ptc one", "ptc two"] })', description: 'Search fixture queries' })
     expect(result.isError).toBe(false)
     expect(h.substrate.requests).toHaveLength(1)
+    expect(h.substrate.requests[0]).toMatchObject({ cwd: process.cwd(), timeoutMs: 30_000 })
     expect(fetch.mock.calls.map(c => String(c[0]))).toEqual(['https://a.invalid/search', 'https://a.invalid/search'])
     expect(JSON.stringify(result)).toContain('ptc one')
     const events = h.agents.get('one')!.session.snapshotEvents()
@@ -289,8 +294,15 @@ function followFixture(h: Awaited<ReturnType<typeof host>>) {
     third:{api:'openai-completions',baseURL:'https://third.invalid/v1',apiKeyEnv:'THIRD_API'},
   }
   const adapters = new Map(Object.keys(providers).map(id => [id, {}]))
-  h.ctx.provide('settings', {get: (ns:string) => ns === 'llm-pi-ai' ? {providers} : undefined} as never)
-  h.ctx.provide('llm', {registration: (id:string) => ({adapter:adapters.get(id)})} as never)
+  h.ctx.provide('settings', {describe: () => [{ns:'renamed-conversation-models',value:{providers}}]} as never)
+  h.ctx.provide('llm', {
+    listConfigurableProviders: () => Object.keys(providers).map(provider => ({provider,settingsNs:'renamed-conversation-models',settingsPath:['providers',provider]})),
+    listProviders: () => [...adapters.keys()].map(id => ({id,name:id})),
+    registration: (id:string) => {
+      if (!adapters.has(id)) throw new Error('Route is no longer registered')
+      return {adapter:adapters.get(id)}
+    },
+  } as never)
   h.changeSettings({version:2,defaultConnection:'builtin:session-model'})
   const fetcher = vi.fn<typeof fetch>(async () => Response.json({
     content:[{type:'web_search_tool_result',content:[{type:'web_search_result',url:'https://source.invalid'}]}],
@@ -307,6 +319,8 @@ describe('follow-session model through installed DSH tools and remotes', () => {
     await Promise.all([h.capture('one'),h.capture('two')])
     // Actual committed identities become available AFTER agent/request preparation.
     header(h,'one','first','actual-one');header(h,'two','second','actual-two')
+    // Pending UI intent applies to the next request, never this execution.
+    h.agents.get('one')!.session.append('model/selection', {provider:'third',model:'pending-next'})
     const view=await h.invoke('get',{sessionId:'one'})
     expect(view.connections.find(c=>c.id==='builtin:session-model')).toMatchObject({configured:true,credentialRef:'FIRST_API'})
     const results=await Promise.all(['one','two'].map(id=>h.execute(id,mode==='ptc'?'run_code':'web_search',mode==='ptc'?{code:'return await tools.web_search({queries:["q"]})',description:'fixture'}:{queries:['a','b']})))

@@ -1,12 +1,12 @@
-# 0.1.2 开发与验证指南
+# 0.1.3 开发与验证指南
 
 本文件保留原路径以避免断链，内容改为可重复的开发、验证与交付方法。架构见[当前架构](design-v2.converged.zh-CN.md)，用户使用见[配置参考](configuration.zh-CN.md)，版本升级见[升级指南](migration.zh-CN.md)。测试存在、测试通过、供应商在线可用、运行实例完成部署是四种不同结论，不能互相替代。
 
 ## 环境与开发入口
 
 - Node.js：`^22.19.0 || >=24.0.0`；pnpm：按 packageManager 使用 `11.7.0`。
-- DSH：包要求 `>=0.1.5-rc.2`，源码以 rc.2 服务契约为基线。依赖声明与锁文件是构建依据，不修改宿主安装的依赖来让测试通过。
-- 当前开发主线为 `main`，旧版代码线为 `legacy/v0.0.x`。包版本 `0.1.2` 与 settings schema 的 `version: 2` 不同。
+- DSH：包要求 `>=0.1.7-rc.1`，源码以 0.1.7-rc.1 服务契约为基线。依赖声明与锁文件是构建依据，不修改宿主安装的依赖来让测试通过。
+- 当前开发主线为 `main`，旧版代码线为 `legacy/v0.0.x`。包版本 `0.1.3` 与 settings schema 的 `version: 2` 不同。
 
 在仓库根执行：
 
@@ -15,7 +15,7 @@ pnpm install --frozen-lockfile
 pnpm run check
 ```
 
-`check` 顺序为 typecheck → test → build → verify:package。任一步失败都不应宣称整个检查完成。安装依赖或构建可能写 node_modules / lib；纯文档工作不必重复构建来制造“验证记录”。
+`check` 顺序为 typecheck → build → test → verify:package（先构建，确保 bundle 测试验证当前产物而非旧文件或跳过）。任一步失败都不应宣称整个检查完成。安装依赖或构建可能写 node_modules / lib；纯文档工作不必重复构建来制造“验证记录”。
 
 ## 检查层级
 
@@ -80,6 +80,8 @@ node scripts/preview-ui.mjs --dark
 
 preview-ui 写 `.dsh-smoke-home/settings-preview.html`，不会启动第二个 DSH 服务。静态预览 / 截图仅供布局审阅，不能证明设置保存、服务端更新或用户机器的实际挂载。
 
+设置预览与选择器浏览器检查共用 `scripts/fixtures/dsh-theme.css`，其中记录 DSH 官方主题变量快照及来源提交。运行时仍直接继承宿主主题，不打包该快照；对齐新版主题时同步更新此文件，避免手写预览配色掩盖深色模式或按钮对比度问题。
+
 真实宿主验收需另外安装构建包，重载插件或重启 DSH 并刷新 Web 页，再检查：
 
 - 官方设置槽和已有会话输入区出现组件，主题 / 窄屏 / 键盘导航正常。
@@ -99,7 +101,7 @@ preview-ui 写 `.dsh-smoke-home/settings-preview.html`，不会启动第二个 D
 
 1. 对最终待发提交运行 check 和所需浏览器 / 网络验证，记录版本与退出状态。
 2. 使用 `pnpm pack` 生成构建包；检查包版本、入口、声明、patch、README 与 docs 完整性。GitHub 自动 Source code archive 不是含 lib 的发行 tgz。
-3. 用户可用 `dsh plugin --profile web add /absolute/path/to/dsh-web-search-enhanced-0.1.2.tgz` 安装 Release 构建附件。
+3. 用户可用 `dsh plugin --profile web add /absolute/path/to/dsh-web-search-enhanced-0.1.3.tgz` 安装 Release 构建附件。
 4. Git 操作、远端分支调整、标签、Release 和 npm 发布分别需要授权与结果核验；不要把本地构建当作已发布。主线为 main，旧代码保留 legacy/v0.0.x，不需要把历史文档反复改成当前成功记录。
 5. 标签触发发布流程后，单独确认 workflow 和 npm registry 的版本 / 包内容，再宣称 npm 可安装。
 

@@ -1,5 +1,10 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
+import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+import type {} from '@deepseek-ai/dsh-api-session-controller/types'
+import type { SearchLocaleProps, selectionInjection } from './bindings.ts'
 import { SESSION_MODEL_ID, SESSION_MODEL_LABEL, type Freshness } from '../catalog.ts'
 import { selectorCss } from './search-selector.css.ts'
 
@@ -16,7 +21,7 @@ export interface SearchConnectionRemote {
   get(request: { sessionId: string }): Promise<RemoteResult<SearchSelectionResponse>>
   set(request: { sessionId: string; connectionId?: string | null; freshness?: Freshness; expectedRevision: number }): Promise<RemoteResult<SearchSelectionResponse>>
 }
-export interface SearchConnectionSelectorProps { sessionId: string; remote: SearchConnectionRemote; sessions?: unknown }
+export type SearchConnectionSelectorProps = PropsRuntime<'conversation.input.right'> & ReturnType<typeof selectionInjection> & SearchLocaleProps
 
 /** Each effect owns a guard: cancellation also fences responses across sessions/unmount. */
 export function createResponseGuard() {
@@ -39,7 +44,8 @@ export function SearchConnectionSelector(props: SearchConnectionSelectorProps) {
   // A new session must never briefly display or write the previous session's selection.
   return <SessionSelector key={props.sessionId} {...props} />
 }
-function SessionSelector({ sessionId, remote, sessions }: SearchConnectionSelectorProps) {
+function SessionSelector({ sessionId, getSelection, setSelection, useProjection, t }: SearchConnectionSelectorProps) {
+  const modelSelection = useProjection('modelSelection')
   const [value, setValue] = useState<SearchSelectionResponse>()
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -55,11 +61,11 @@ function SessionSelector({ sessionId, remote, sessions }: SearchConnectionSelect
       reading = true
       const token = guard.begin()
       try {
-        const result = await remote.get({ sessionId })
+        const result = await getSelection()
         if (!guard.accepts(token)) return
         if (result.ok) { setValue(result.value); if (clearError) setError('') }
         else setError(result.error.message)
-      } catch { if (guard.accepts(token)) setError('读取搜索连接失败，请重试。') }
+      } catch { if (guard.accepts(token)) setError(t('selectionReadFailed')) }
       finally { reading = false }
     }
     const select = async (connectionId: string | null | undefined, expectedRevision: number, freshness?: Freshness) => {
@@ -69,11 +75,11 @@ function SessionSelector({ sessionId, remote, sessions }: SearchConnectionSelect
       setPending(true); setError(''); setNotice('')
       let refreshAfterFailure = false
       try {
-        const result = await remote.set({ sessionId, ...(connectionId !== undefined ? { connectionId } : {}), ...(freshness !== undefined ? { freshness } : {}), expectedRevision })
+        const result = await setSelection({ ...(connectionId !== undefined ? { connectionId } : {}), ...(freshness !== undefined ? { freshness } : {}), expectedRevision })
         if (!guard.accepts(token)) return
-        if (result.ok) { setValue(result.value); setNotice('已保存，下一次模型请求生效。') }
-        else { setError(result.error.message + '（已请求刷新，请核对后重试。）'); refreshAfterFailure = true }
-      } catch { if (guard.accepts(token)) { setError('保存失败，未确认切换；请刷新核对后重试。'); refreshAfterFailure = true } }
+        if (result.ok) { setValue(result.value); setNotice(t('selectionSaved')) }
+        else { setError(result.error.message + t('selectionRefreshed')); refreshAfterFailure = true }
+      } catch { if (guard.accepts(token)) { setError(t('selectionWriteFailed')); refreshAfterFailure = true } }
       finally {
         writing = false
         if (guard.accepts(token)) {
@@ -88,34 +94,24 @@ function SessionSelector({ sessionId, remote, sessions }: SearchConnectionSelect
     const focus = () => { void refresh() }
     window.addEventListener('focus', focus)
     return () => { guard.cancel(); controller.current = undefined; window.clearInterval(timer); window.removeEventListener('focus', focus) }
-  }, [sessionId, remote])
+  }, [sessionId, getSelection, setSelection, t])
 
-  // Subscribe to live model selection changes in the session
-  useEffect(() => {
-    const s = sessions as { binding?: (id: string) => { session?: { projections?: { faceOf?: (key: string) => { subscribe?: (fn: () => void) => () => void } } } } } | undefined
-    try {
-      const face = s?.binding?.(sessionId)?.session?.projections?.faceOf?.('modelSelection')
-      if (face && typeof face.subscribe === 'function') {
-        const unsubscribe = face.subscribe(() => {
-          void controller.current?.refresh(true)
-        })
-        return () => { unsubscribe() }
-      }
-    } catch { /* ignore */ }
-  }, [sessionId, sessions])
+  // The framework owns projection subscriptions and binding-generation cleanup.
+  // Absence is a supported projection value, not a reason to guess at Session internals.
+  useEffect(() => { void controller.current?.refresh(true) }, [modelSelection])
   const connections = useMemo(() => discoverableConnections(value?.connections ?? []), [value?.connections])
   useEffect(() => {
     if (!notice) return
     const timer = window.setTimeout(() => setNotice(''), 3000)
     return () => window.clearTimeout(timer)
   }, [notice])
-  return <SearchSelectorControl value={value} connections={connections} pending={pending} error={error} notice={notice}
+  return <SearchSelectorControl t={t} value={value} connections={connections} pending={pending} error={error} notice={notice}
     onSelect={id => { if (value) void controller.current?.select(id, value.selection.revision) }}
     onFreshness={freshness => { if (value) void controller.current?.select(undefined, value.selection.revision, freshness) }}
     onRefresh={() => { void controller.current?.refresh(true) }} />
 }
 
-export interface SearchSelectorControlProps {
+export interface SearchSelectorControlProps extends SearchLocaleProps {
   value?: SearchSelectionResponse | undefined
   connections: SearchConnectionView[]
   pending: boolean
@@ -127,14 +123,14 @@ export interface SearchSelectorControlProps {
 }
 
 /** Native popovers live in the top layer, outside the composer's clipping boundary. */
-export function SearchSelectorControl({ value, connections, pending, error, notice, onSelect, onFreshness, onRefresh }: SearchSelectorControlProps) {
+export function SearchSelectorControl({ t, value, connections, pending, error, notice, onSelect, onFreshness, onRefresh }: SearchSelectorControlProps) {
   const id = useId()
   const panel = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
   const selected = value?.selection.connectionId
   const current = connections.find(c => c.id === selected)
-  const label = !value ? '搜索' : current?.id === SESSION_MODEL_ID ? '跟随模型' : current?.label ?? (selected ? '连接失效' : '选择搜索')
+  const label = !value ? t('search') : current?.id === SESSION_MODEL_ID ? t('followModel') : current?.label ?? (selected ? t('connectionUnavailable') : t('selectSearch'))
   useEffect(() => {
     const node = panel.current
     if (!node) return
@@ -162,19 +158,19 @@ export function SearchSelectorControl({ value, connections, pending, error, noti
   }
   return <div className="v2s-selector">
     <style>{selectorCss}</style>
-    <button ref={trigger} type="button" className="v2s-search-trigger" aria-label={'搜索连接：' + label}
+    <button ref={trigger} type="button" className="v2s-search-trigger" aria-label={t('searchConnection') + label}
       aria-haspopup="dialog" aria-expanded={open} aria-controls={id}
       data-state={error ? 'error' : pending ? 'saving' : notice ? 'saved' : 'ready'}
-      title={error || (pending ? '正在保存…' : notice || '搜索连接：' + (current?.label ?? '未选择'))}
+      title={error || (pending ? t('saving') : notice || t('searchConnection') + (current?.label ?? t('notSelected')))}
       onClick={toggle}>
       <svg className={pending ? 'v2s-search-icon v2s-search-busy' : 'v2s-search-icon'} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c4 4 4 14 0 18M12 3c-4 4-4 14 0 18"/></svg>
       <span className="v2s-search-label">{label}</span>
-      {value ? <span className="v2s-search-mode">{value.freshness === 'auto' ? '自动' : value.freshness === 'fresh' ? '新鲜' : '实时'}</span> : null}
+      {value ? <span className="v2s-search-mode">{t(value.freshness === 'auto' ? 'freshnessAuto' : value.freshness === 'fresh' ? 'freshnessFreshShort' : 'freshnessRealtimeShort')}</span> : null}
       {error ? <span className="v2s-search-error-dot" aria-hidden="true">!</span> : notice ? <span className="v2s-search-check" aria-hidden="true">✓</span> : null}
       <svg className="v2s-search-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg>
     </button>
-    <span className="v2s-search-sr" role="status" aria-live="polite">{error || (pending ? '正在保存' : notice)}</span>
-    <div ref={panel} id={id} {...{ popover: 'auto' }} role="dialog" aria-label="当前会话搜索设置" className="v2s-selector-panel"
+    <span className="v2s-search-sr" role="status" aria-live="polite">{error || (pending ? t('saving') : notice)}</span>
+    <div ref={panel} id={id} {...{ popover: 'auto' }} role="dialog" aria-label={t('sessionSearchSettings')} className="v2s-selector-panel"
       onKeyDown={event => {
         if (event.key === 'Escape') { panel.current?.hidePopover(); trigger.current?.focus(); return }
         if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
@@ -185,15 +181,15 @@ export function SearchSelectorControl({ value, connections, pending, error, noti
         const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (index + (event.key === 'ArrowUp' ? -1 : 1) + items.length) % items.length
         items[next]?.focus()
       }}>
-      {(['model', 'structured'] as const).filter(kind => connections.some(c => c.kind === kind && c.configured)).map(kind => <div key={kind} role="group" aria-label={kind === 'model' ? '模型搜索' : '搜索服务'}>
-        <div className="v2s-search-group-title">{kind === 'model' ? '模型搜索' : '搜索服务'}</div>
+      {(['model', 'structured'] as const).filter(kind => connections.some(c => c.kind === kind && c.configured)).map(kind => <div key={kind} role="group" aria-label={t(kind === 'model' ? 'modelSearch' : 'searchServices')}>
+        <div className="v2s-search-group-title">{t(kind === 'model' ? 'modelSearch' : 'searchServices')}</div>
         {connections.filter(c => c.kind === kind && c.configured).map(c => <button key={c.id} type="button" className="v2s-search-option" disabled={!value || pending || !c.configured} aria-pressed={c.id === selected} onClick={() => { if (c.configured && c.id !== selected) onSelect(c.id) }}><span>{c.label}</span><span className="v2s-search-option-check" aria-hidden="true">{c.id === selected ? '✓' : ''}</span></button>)}
       </div>)}
-      <div className="v2s-search-freshness" role="group" aria-label="当前会话内容实时性">
-        <div className="v2s-search-group-title">内容实时性</div>
-        <div className="v2s-search-segments">{(['auto', 'fresh', 'realtime'] as const).map(mode => <button key={mode} type="button" aria-pressed={value?.freshness === mode} disabled={!value || pending} onClick={() => { if (value?.freshness !== mode) onFreshness(mode) }}>{freshnessLabels[mode]}</button>)}</div>
+      <div className="v2s-search-freshness" role="group" aria-label={t('sessionFreshness')}>
+        <div className="v2s-search-group-title">{t('freshness')}</div>
+        <div className="v2s-search-segments">{(['auto', 'fresh', 'realtime'] as const).map(mode => <button key={mode} type="button" aria-pressed={value?.freshness === mode} disabled={!value || pending} onClick={() => { if (value?.freshness !== mode) onFreshness(mode) }}>{t(mode === 'auto' ? 'freshnessAuto' : mode === 'fresh' ? 'freshnessFresh' : 'freshnessRealtime')}</button>)}</div>
       </div>
-      {error ? <div className="v2s-search-error" role="alert"><span>{error}</span><button type="button" disabled={pending} onClick={onRefresh}>重试</button></div> : null}
+      {error ? <div className="v2s-search-error" role="alert"><span>{error}</span><button type="button" disabled={pending} onClick={onRefresh}>{t('retry')}</button></div> : null}
     </div>
   </div>
 }
