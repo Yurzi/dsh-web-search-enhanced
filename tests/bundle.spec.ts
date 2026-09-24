@@ -36,13 +36,13 @@ function readClientBundle(): string | undefined {
 }
 
 describe('installable DSH profile bundle', () => {
-  it('requires DSH 0.1.7-rc.1 and builds against that exact prerelease', () => {
-    expect(manifest.engines.dsh).toBe('>=0.1.7-rc.1')
+  it('requires DSH 0.1.7-rc.2 and builds against that exact prerelease', () => {
+    expect(manifest.engines.dsh).toBe('>=0.1.7-rc.2')
     for (const [name, range] of Object.entries(manifest.peerDependencies)) {
-      if (name.startsWith('@deepseek-ai/dsh-')) expect(range).toBe('^0.1.7-rc.1')
+      if (name.startsWith('@deepseek-ai/dsh-')) expect(range).toBe('^0.1.7-rc.2')
     }
     for (const [name, version] of Object.entries(manifest.devDependencies)) {
-      if (name.startsWith('@deepseek-ai/dsh-')) expect(version).toBe('0.1.7-rc.1')
+      if (name.startsWith('@deepseek-ai/dsh-')) expect(version).toBe('0.1.7-rc.2')
     }
     expect(manifest.devDependencies).not.toHaveProperty('@deepseek-ai/dsh-code-runtime')
     expect(manifest.dsh?.client?.inject).toContain('@deepseek-ai/dsh-client-ui-session')

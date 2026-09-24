@@ -23,7 +23,7 @@ try {
     assert.ok(readFileSync(join(dir, 'package', path)).length > 0, 'missing packed artifact: ' + path)
   }
   assert.equal(pkg.dsh.bundle.patch, './cordis.patch.yml')
-  assert.equal(pkg.engines.dsh, '>=0.1.7-rc.1')
+  assert.equal(pkg.engines.dsh, '>=0.1.7-rc.2')
   assert.ok(pkg.dsh.client.inject.includes('@deepseek-ai/dsh-client-ui-plugin-manager'))
   assert.ok(pkg.dsh.client.inject.includes('@deepseek-ai/dsh-client-ui-session'))
   console.log('packed plugin contract verified:', basename(tarball))

@@ -10,7 +10,7 @@
 
 [![Release](https://img.shields.io/github/v/release/Yurzi/dsh-web-search-enhanced?style=flat-square)](https://github.com/Yurzi/dsh-web-search-enhanced/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](LICENSE)
-[![DSH](https://img.shields.io/badge/DSH-0.1.7--rc.1%2B-536DFE?style=flat-square)](package.json)
+[![DSH](https://img.shields.io/badge/DSH-0.1.7--rc.2%2B-536DFE?style=flat-square)](package.json)
 [![Node.js](https://img.shields.io/badge/Node.js-22.19%2B%20%7C%2024%2B-green?style=flat-square)](package.json)
 
 [🚀 快速上手](#-快速上手) · [✨ 核心特性](#-核心特性) · [🔍 搜索引擎推荐](#-选哪种搜索服务) · [⚙️ 进阶配置](#️-进阶配置与个人-key) · [❓ 常见问题](#-常见问题-faq) · [📖 详细文档](#-想了解更多)
@@ -60,27 +60,27 @@
 
 ### 环境要求
 
-- **DeepSeek Harness**：≥ `0.1.7-rc.1`
+- **DeepSeek Harness**：≥ `0.1.7-rc.2`
 - **Node.js**：`^22.19.0 || >=24.0.0`
 
-本版已对齐 DSH 0.1.7-rc.1 的动态配置、插件设置页和会话 projection 架构，详见[上游适配记录](docs/upstream-0.1.7-adaptation.zh-CN.md)。升级前请备份 profile 和旧设置。
+本版将 DSH 基线提升到 0.1.7-rc.2，保留动态配置、插件设置页和会话 projection 架构，详见[rc.2 影响评估](docs/upstream-0.1.7-rc.2-assessment.zh-CN.md)。升级前请备份 profile 和旧设置。
 
 ### 步骤 1：安装插件
 
 **方式 A：通过 GitHub Release 离线包安装（推荐）**
 
-当前版本为 **0.1.3**，最低支持 **DSH 0.1.7-rc.1**。从 [v0.1.3 Release](https://github.com/Yurzi/dsh-web-search-enhanced/releases/tag/v0.1.3) 下载安装包及 SHA256 校验文件；也可执行 `pnpm install --frozen-lockfile && pnpm run check && pnpm pack` 自行构建。使用绝对路径安装：
+当前版本为 **0.1.4**，最低支持 **DSH 0.1.7-rc.2**。发布后可从 [Releases](https://github.com/Yurzi/dsh-web-search-enhanced/releases) 下载对应版本安装包及 SHA256 校验文件；也可执行 `pnpm install --frozen-lockfile && pnpm run check && pnpm pack` 自行构建。使用绝对路径安装：
 
 ```sh
-dsh plugin --profile web add /path/to/dsh-web-search-enhanced-0.1.3.tgz
+dsh plugin --profile web add /path/to/dsh-web-search-enhanced-0.1.4.tgz
 ```
 
 **方式 B：通过 npm 在线安装**
 
-也可从 npm 直接安装：
+该版本发布到 npm 后，也可直接安装：
 
 ```sh
-dsh plugin --profile web add dsh-web-search-enhanced@0.1.3
+dsh plugin --profile web add dsh-web-search-enhanced@0.1.4
 ```
 
 ### 步骤 2：生效与刷新
