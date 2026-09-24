@@ -11,6 +11,7 @@ import { zh, type LocaleKey } from '../src/client/locales.ts'
 const renderers: ReactTestRenderer[] = []
 beforeEach(() => {
   vi.useFakeTimers()
+  vi.stubGlobal('document', { visibilityState: 'visible', addEventListener: vi.fn(), removeEventListener: vi.fn() })
   vi.stubGlobal('window', {
     setInterval, clearInterval, setTimeout, clearTimeout,
     addEventListener: vi.fn(), removeEventListener: vi.fn(),

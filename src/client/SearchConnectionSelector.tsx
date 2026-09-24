@@ -46,59 +46,72 @@ export function SearchConnectionSelector(props: SearchConnectionSelectorProps) {
 }
 function SessionSelector({ sessionId, getSelection, setSelection, useProjection, t }: SearchConnectionSelectorProps) {
   const modelSelection = useProjection('modelSelection')
+  // Projection snapshots and injected callbacks can be recreated on unrelated renders.
+  const modelKey = JSON.stringify(modelSelection ? [
+    modelSelection.lastUsed?.provider, modelSelection.lastUsed?.model, modelSelection.lastUsed?.reasoningEffort,
+    modelSelection.next?.provider, modelSelection.next?.model, modelSelection.next?.reasoningEffort,
+  ] : null)
+  const latest = useRef({ getSelection, setSelection, t, modelKey })
+  latest.current = { getSelection, setSelection, t, modelKey }
   const [value, setValue] = useState<SearchSelectionResponse>()
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [pending, setPending] = useState(false)
-  const controller = useRef<{ refresh(clearError?: boolean): Promise<void>; select(id: string | null | undefined, revision: number, freshness?: Freshness): Promise<void> }>()
+  const controller = useRef<{ refresh(force?: boolean, clearError?: boolean): Promise<void>; select(id: string | null | undefined, revision: number, freshness?: Freshness): Promise<void> }>()
   useEffect(() => {
-    const guard = createResponseGuard()
+    const reads = createResponseGuard()
+    const writes = createResponseGuard()
     let writing = false
-    let reading = false
-    setValue(undefined); setError(''); setNotice(''); setPending(false)
-    const refresh = async (clearError = false) => {
-      if (writing || reading) return
-      reading = true
-      const token = guard.begin()
+    const refresh = async (force = false, clearError = true) => {
+      const token = reads.begin()
       try {
-        const result = await getSelection()
-        if (!guard.accepts(token)) return
+        // The shared client merges reads and queues model invalidation across writes.
+        const result = await latest.current.getSelection({ force, modelKey: latest.current.modelKey })
+        if (!reads.accepts(token)) return
         if (result.ok) { setValue(result.value); if (clearError) setError('') }
         else setError(result.error.message)
-      } catch { if (guard.accepts(token)) setError(t('selectionReadFailed')) }
-      finally { reading = false }
+      } catch { if (reads.accepts(token)) setError(latest.current.t('selectionReadFailed')) }
     }
     const select = async (connectionId: string | null | undefined, expectedRevision: number, freshness?: Freshness) => {
       if (writing) return
       writing = true
-      const token = guard.begin() // invalidate an older poll before crossing the write boundary
+      reads.begin() // A pre-write read must never replace the confirmed write in this view.
+      const token = writes.begin()
+      const writeModelKey = latest.current.modelKey
       setPending(true); setError(''); setNotice('')
       let refreshAfterFailure = false
       try {
-        const result = await setSelection({ ...(connectionId !== undefined ? { connectionId } : {}), ...(freshness !== undefined ? { freshness } : {}), expectedRevision })
-        if (!guard.accepts(token)) return
-        if (result.ok) { setValue(result.value); setNotice(t('selectionSaved')) }
-        else { setError(result.error.message + t('selectionRefreshed')); refreshAfterFailure = true }
-      } catch { if (guard.accepts(token)) { setError(t('selectionWriteFailed')); refreshAfterFailure = true } }
+        const result = await latest.current.setSelection({ ...(connectionId !== undefined ? { connectionId } : {}), ...(freshness !== undefined ? { freshness } : {}), expectedRevision })
+        if (!writes.accepts(token)) return
+        if (result.ok) {
+          // The write may have committed against an older model projection. Its
+          // queued refresh owns availability/defaults for the newly selected model.
+          if (writeModelKey === latest.current.modelKey) setValue(result.value)
+          setNotice(latest.current.t('selectionSaved'))
+        }
+        else { setError(result.error.message + latest.current.t('selectionRefreshed')); refreshAfterFailure = true }
+      } catch { if (writes.accepts(token)) { setError(latest.current.t('selectionWriteFailed')); refreshAfterFailure = true } }
       finally {
         writing = false
-        if (guard.accepts(token)) {
+        if (writes.accepts(token)) {
           setPending(false)
-          if (refreshAfterFailure) { reading = false; void refresh() }
+          if (refreshAfterFailure) void refresh(true, false)
         }
       }
     }
     controller.current = { refresh, select }
-    void refresh()
-    const timer = window.setInterval(() => { void refresh() }, 2000)
-    const focus = () => { void refresh() }
+    const focus = () => { if (document.visibilityState === 'visible') void refresh() }
     window.addEventListener('focus', focus)
-    return () => { guard.cancel(); controller.current = undefined; window.clearInterval(timer); window.removeEventListener('focus', focus) }
-  }, [sessionId, getSelection, setSelection, t])
+    document.addEventListener('visibilitychange', focus)
+    return () => {
+      reads.cancel(); writes.cancel(); controller.current = undefined
+      window.removeEventListener('focus', focus)
+      document.removeEventListener('visibilitychange', focus)
+    }
+  }, [sessionId])
 
-  // The framework owns projection subscriptions and binding-generation cleanup.
-  // Absence is a supported projection value, not a reason to guess at Session internals.
-  useEffect(() => { void controller.current?.refresh(true) }, [modelSelection])
+  // Includes initial load. Semantic model changes bypass TTL inside the shared client.
+  useEffect(() => { void controller.current?.refresh() }, [sessionId, modelKey])
   const connections = useMemo(() => discoverableConnections(value?.connections ?? []), [value?.connections])
   useEffect(() => {
     if (!notice) return
@@ -108,6 +121,7 @@ function SessionSelector({ sessionId, getSelection, setSelection, useProjection,
   return <SearchSelectorControl t={t} value={value} connections={connections} pending={pending} error={error} notice={notice}
     onSelect={id => { if (value) void controller.current?.select(id, value.selection.revision) }}
     onFreshness={freshness => { if (value) void controller.current?.select(undefined, value.selection.revision, freshness) }}
+    onOpen={() => { void controller.current?.refresh() }}
     onRefresh={() => { void controller.current?.refresh(true) }} />
 }
 
@@ -119,11 +133,12 @@ export interface SearchSelectorControlProps extends SearchLocaleProps {
   notice: string
   onSelect(id: string | null): void
   onFreshness(freshness: Freshness): void
+  onOpen?(): void
   onRefresh(): void
 }
 
 /** Native popovers live in the top layer, outside the composer's clipping boundary. */
-export function SearchSelectorControl({ t, value, connections, pending, error, notice, onSelect, onFreshness, onRefresh }: SearchSelectorControlProps) {
+export function SearchSelectorControl({ t, value, connections, pending, error, notice, onSelect, onFreshness, onOpen, onRefresh }: SearchSelectorControlProps) {
   const id = useId()
   const panel = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
@@ -141,10 +156,10 @@ export function SearchSelectorControl({ t, value, connections, pending, error, n
     return () => { node.removeEventListener('toggle', sync); window.removeEventListener('resize', close) }
   }, [])
   const toggle = () => {
-    onRefresh()
     const node = panel.current, button = trigger.current
     if (!node || !button) return
     if (node.matches(':popover-open')) { node.hidePopover(); return }
+    ;(onOpen ?? onRefresh)()
     const rect = button.getBoundingClientRect()
     const width = Math.min(280, window.innerWidth - 32)
     node.style.width = width + 'px'

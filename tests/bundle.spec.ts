@@ -98,7 +98,7 @@ describe('installable DSH profile bundle', () => {
 
     expect(new Set(requested)).toEqual(new Set(['react', 'react/jsx-runtime']))
     expect(exports.apply).toBeTypeOf('function')
-    expect(exports.inject).toEqual(['slots', 'locale', 'configForms', 'remote', 'remote.credentials'])
+    expect(exports.inject).toEqual(['connection', 'slots', 'locale', 'configForms', 'remote', 'remote.credentials'])
   })
 
   it('allows seamless fetch auto-selection when fetchProvider is omitted in WebRuntime config', async () => {

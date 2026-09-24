@@ -46,11 +46,12 @@ describe('settings card helpers', () => {
     const register = vi.fn()
     const mount = vi.fn(async () => async () => {})
     const ctx: any = {
+      get: () => ({ generation: { subscribe: vi.fn() } }),
       inject: (keys: string[], fn: (scope: unknown) => unknown) => { expect(keys).toEqual(['remote.searchConnections']); return fn(ctx) },
       locale: { register: vi.fn() }, effect: (fn: () => unknown) => fn(),
-      configForms: { get: () => ({}), whileServed: (_names: string[], register: () => unknown) => register() },
+      configForms: { get: () => ({ subscribe: vi.fn() }), whileServed: (_names: string[], register: () => unknown) => register() },
       slots: { inject: (_name: string, fn: () => unknown) => fn(), register },
-      remote: { credentials: {}, searchConnections: { get: vi.fn(), set: vi.fn() }, $mount: mount },
+      remote: { credentials: {}, searchConnections: { get: vi.fn(async () => ({ ok: true, value: { selection: { connectionId: null, revision: 0 }, freshness: 'auto', connections: [] } })), set: vi.fn() }, $mount: mount },
     }
     await apply(ctx as any)
     expect(mount).toHaveBeenCalledTimes(1)

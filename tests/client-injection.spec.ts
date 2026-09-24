@@ -8,9 +8,10 @@ afterEach(async () => { for (const ctx of contexts.splice(0)) await ctx.fiber.di
 async function fixture() {
   const ctx = new Context(); contexts.push(ctx)
   const entries = new Map<string, any>()
-  const search = { get: vi.fn(), set: vi.fn() }
-  const credentials = { describe: vi.fn(), set: vi.fn() }
-  const form = { getSnapshot: vi.fn(), subscribe: vi.fn(), mutate: vi.fn(async () => false) }
+  const value = { selection: { connectionId: null, revision: 0 }, freshness: 'auto', connections: [] }
+  const search = { get: vi.fn(async () => ({ ok: true, value })), set: vi.fn(async () => ({ ok: true, value })) }
+  const credentials = { describe: vi.fn(), set: vi.fn(async () => ({ ok: true, value: undefined })) }
+  const form = { getSnapshot: vi.fn(), subscribe: vi.fn((_listener: () => void) => vi.fn()), mutate: vi.fn(async () => false) }
   const registerLocale = vi.fn(() => vi.fn())
   let served = true
   let syncSettings: (() => void) | undefined
@@ -45,11 +46,13 @@ async function fixture() {
     }
   }
   new Remote(ctx); new Slots(ctx)
+  const generation = { subscribe: vi.fn((_listener: () => void) => vi.fn()) }
+  ctx.provide('connection', { generation })
   ctx.provide('remote.credentials', credentials)
   ctx.provide('locale', { register: registerLocale })
   ctx.provide('configForms', configForms)
   return {
-    ctx, entries, search, credentials, form, configForms, registerLocale, mountNamespace,
+    ctx, entries, search, credentials, form, configForms, registerLocale, mountNamespace, generation,
     serve: (value: boolean) => { served = value; syncSettings?.() },
     unmount: async () => { await provider?.dispose() },
   }
@@ -89,6 +92,41 @@ it('mounts before injecting, binds callbacks to the Session, and follows namespa
   await plugin.dispose()
   expect(h.entries.size).toBe(0)
   expect(h.registerLocale.mock.results[0]!.value).toHaveBeenCalledOnce()
+})
+
+it('shares session reads and invalidates on settings, credential and carrier changes', async () => {
+  const h = await fixture()
+  const plugin = h.ctx.plugin(client)
+  await plugin
+  await vi.waitFor(() => expect(h.entries.has('conversation.input.right')).toBe(true))
+  const selector = h.entries.get('conversation.input.right')
+  const first = selector.inject('same-session')
+  const second = selector.inject('same-session')
+  await Promise.all([first.getSelection(), second.getSelection()])
+  expect(h.search.get).toHaveBeenCalledTimes(1)
+  await second.getSelection()
+  expect(h.search.get).toHaveBeenCalledTimes(1)
+
+  h.form.subscribe.mock.calls[0]![0]()
+  await first.getSelection()
+  expect(h.search.get).toHaveBeenCalledTimes(2)
+  await h.entries.get('plugins.bundle.config').inject().setCredential('KEY', 'value')
+  await first.getSelection()
+  expect(h.search.get).toHaveBeenCalledTimes(3)
+  h.generation.subscribe.mock.calls[0]![0]()
+  await second.getSelection()
+  expect(h.search.get).toHaveBeenCalledTimes(4)
+
+  await h.unmount()
+  await vi.waitFor(() => expect(h.entries.has('conversation.input.right')).toBe(false))
+  expect(() => first.getSelection()).toThrow('disposed')
+  expect(h.form.subscribe.mock.results[0]!.value).toHaveBeenCalledOnce()
+  expect(h.generation.subscribe.mock.results[0]!.value).toHaveBeenCalledOnce()
+  await h.mountNamespace()
+  await vi.waitFor(() => expect(h.entries.has('conversation.input.right')).toBe(true))
+  await h.entries.get('conversation.input.right').inject('same-session').getSelection()
+  expect(h.search.get).toHaveBeenCalledTimes(5)
+  await plugin.dispose()
 })
 
 it('registers bundle configuration only while served, with framework hooks and no service props', async () => {
