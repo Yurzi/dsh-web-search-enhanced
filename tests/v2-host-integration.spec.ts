@@ -17,6 +17,7 @@ import Gateway from '@deepseek-ai/dsh-api-gateway'
 import SessionController from '@deepseek-ai/dsh-api-session-controller'
 import { Session, type SessionId } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { createScope } from '@deepseek-ai/dsh-scope'
 import { PtcRuntime, type PtcRunRequest, type PtcRunSpec, type PtcRunResult } from '@deepseek-ai/dsh-ptc-runtime'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
@@ -66,11 +67,18 @@ async function host(root?: string, mode: 'native' | 'ptc' = 'native', deferStora
   new TypertRegistry(ctx)
   new Gateway(ctx, {})
   // Real Session objects record PTC events; lightweight Agent identities avoid an LLM.
+  const createAgent = (id: string, session: Session, options?: Record<string, unknown>) => {
+    const agent = { id, session, ...(options ? { options } : {}) } as unknown as Agent
+    const scope = createScope(ctx, agent)
+    cleanups.push(() => scope.dispose())
+    ;(agent as { ctx: Context }).ctx = scope.ctx
+    return agent
+  }
   const agents = new Map<string, Agent>()
   for (const id of ['one', 'two', 'child']) {
     const base = Session.create(sid(id))
     const session = id === 'child' ? Session.create(sid(id), [], { ...base.header, origin: 'subagent' }) : base
-    agents.set(id, { id, ctx, session } as unknown as Agent)
+    agents.set(id, createAgent(id, session))
   }
   ctx.provide('agents', { get: (id: string) => agents.get(id), isOwnedBy: () => false } as never)
   ctx.provide('sessions', { get: (id: string) => agents.get(id)?.session } as never)
@@ -586,6 +594,34 @@ describe('storage activation and snapshot recovery', () => {
       const v4 = await h.invoke('get', { sessionId: 'switch-session' })
       expect(v4.selection.connectionId).toBe('custom:a')
       expect(v4.selection.revision).toBe(1)
+    })
+
+    it('restricts web_search tool from agent when connection is closed (null), and restores when connection is selected', async () => {
+      successTransport()
+      const h = await host()
+      const agent = h.agents.get('one')!
+      // Initially default connection is 'custom:a', so web_search is visible
+      await h.invoke('get', { sessionId: 'one' })
+      expect(h.ctx.tools.get('web_search', agent)).toBeDefined()
+      expect(h.ctx.tools.schemas(agent).some(tool => tool.name === 'web_search')).toBe(true)
+
+      // User switches to off (connectionId: null)
+      await h.invoke('set', { sessionId: 'one', connectionId: null, expectedRevision: 0 })
+      // Tool is now denied/restricted from agent
+      expect(h.ctx.tools.get('web_search', agent)).toBeUndefined()
+      expect(h.ctx.tools.schemas(agent).some(tool => tool.name === 'web_search')).toBe(false)
+      expect((await h.execute('one')).isError).toBe(true)
+
+      // User switches back to connection 'custom:b'
+      await h.invoke('set', { sessionId: 'one', connectionId: 'custom:b', expectedRevision: 1 })
+      // Tool is restored for agent
+      expect(h.ctx.tools.get('web_search', agent)).toBeDefined()
+      expect(h.ctx.tools.schemas(agent).some(tool => tool.name === 'web_search')).toBe(true)
+
+      // And switches back to null
+      await h.invoke('set', { sessionId: 'one', connectionId: null, expectedRevision: 2 })
+      expect(h.ctx.tools.get('web_search', agent)).toBeUndefined()
+      expect(h.ctx.tools.schemas(agent).some(tool => tool.name === 'web_search')).toBe(false)
     })
   })
 })

@@ -14,9 +14,19 @@ export const selectorCss = `
 .v2s-search-busy { animation:v2s-search-pulse 1s ease-in-out infinite alternate; }
 @keyframes v2s-search-pulse { to { opacity:.35; } }
 @media(prefers-reduced-motion:reduce) { .v2s-search-busy { animation:none; } .v2s-search-chevron { transition:none; } }
-/* Match DSH conversation.input.model content-driven collapse via row variables. */
+/* Match DSH conversation.input.model content-driven collapse via row variables on desktop. */
 .v2s-search-label,.v2s-search-mode { display:var(--dsh-composer-model-text-display,block); }
 :where([data-model-compact]) .v2s-search-label,:where([data-model-compact]) .v2s-search-mode { display:none; }
+/* Responsive auto-scaling for narrow containers and mobile viewports. */
+@container(width<=420px) { .v2s-search-mode { display:none; } }
+@container(width<=360px) { .v2s-search-label { display:none; } }
+@media (max-width:420px) { .v2s-search-mode { display:none; } }
+@media (max-width:360px) { .v2s-search-label { display:none; } }
+/* Auto-scaling adaptation under dsh-mobile grid layout. */
+:where([data-dsh-mobile-composer-row]) .v2s-selector,:where([data-dsh-mobile-composer-trailing]) .v2s-selector { flex:0 1 auto; min-width:0; max-width:min(100%,180px); }
+:where([data-dsh-mobile-composer-row]) .v2s-search-trigger,:where([data-dsh-mobile-composer-trailing]) .v2s-search-trigger { min-width:0; max-width:100%; }
+:where([data-dsh-mobile-composer-row]) .v2s-search-mode,:where([data-dsh-mobile-composer-trailing]) .v2s-search-mode { display:none; }
+:where([data-dsh-mobile-composer-row]) .v2s-search-label,:where([data-dsh-mobile-composer-trailing]) .v2s-search-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .v2s-search-sr { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0; }
 .v2s-selector-panel { position:fixed; inset:auto; margin:0; box-sizing:border-box; max-width:calc(100vw - 32px); padding:3px; overflow:auto; overscroll-behavior:contain; border:0; border-radius:16px; background:var(--dsw-specific-menu); backdrop-filter:var(--dsw-menu-backdrop-filter); color:var(--dsw-alias-label-primary); --dsw-elevation-stroke-color:var(--dsw-alias-border-l1); box-shadow:var(--dsw-elevation-prominent); --dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2); --dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2); font-family:inherit; font-size:13px; line-height:20px; }
 .v2s-selector-panel:not(:popover-open) { display:none; }

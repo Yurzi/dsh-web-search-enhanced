@@ -1,6 +1,6 @@
 export const en = {
   connectionsDescription: 'Manage session search connections, credential references and freshness preferences.',
-  search: 'Search', followModel: 'Follow model', connectionUnavailable: 'Connection unavailable', selectSearch: 'Select search',
+  search: 'Search', followModel: 'Follow model', connectionUnavailable: 'Connection unavailable', selectSearch: 'Select search', searchOff: 'Off',
   searchConnection: 'Search connection: ', notSelected: 'Not selected', sessionSearchSettings: 'Current session search settings',
   modelSearch: 'Model search', searchServices: 'Search services', sessionFreshness: 'Current session content freshness', freshness: 'Content freshness',
   freshnessAuto: 'Auto', freshnessFresh: 'Prefer fresh', freshnessRealtime: 'Prefer realtime', freshnessFreshShort: 'Fresh', freshnessRealtimeShort: 'Realtime',
@@ -42,7 +42,7 @@ export const en = {
 export type LocaleKey = keyof typeof en
 export const zh: Record<LocaleKey, string> = {
   connectionsDescription: '管理会话搜索连接、凭据引用与内容实时性偏好',
-  search: '搜索', followModel: '跟随模型', connectionUnavailable: '连接失效', selectSearch: '选择搜索',
+  search: '搜索', followModel: '跟随模型', connectionUnavailable: '连接失效', selectSearch: '选择搜索', searchOff: '关闭',
   searchConnection: '搜索连接：', notSelected: '未选择', sessionSearchSettings: '当前会话搜索设置',
   modelSearch: '模型搜索', searchServices: '搜索服务', sessionFreshness: '当前会话内容实时性', freshness: '内容实时性',
   freshnessAuto: '自动', freshnessFresh: '优先新鲜', freshnessRealtime: '优先实时', freshnessFreshShort: '新鲜', freshnessRealtimeShort: '实时',

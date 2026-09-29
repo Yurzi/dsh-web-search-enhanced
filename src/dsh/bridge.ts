@@ -2,6 +2,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
+import { scopeOf } from '@deepseek-ai/dsh-scope'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -22,6 +23,7 @@ export interface BridgeRuntime {
   describe(agent?: Agent): Promise<SelectionView['connections']>
   initialize(session: Agent['session'], agent?: Agent): Promise<SelectionView['selection']>
   store?: ModelPairingStore
+  syncRestriction?(agent: object, connectionId: string | null | undefined): void
 }
 /** Ordinary-session authorization deliberately delegates to the real Session Controller. */
 export class SearchConnections extends TypertRemoteService {
@@ -64,6 +66,9 @@ export class SearchConnections extends TypertRemoteService {
         await this.store.set(model.provider, model.model, connectionId)
       }
     }
+    if (connectionId !== undefined) {
+      this.runtime.syncRestriction?.(agent, connectionId)
+    }
     return this.view(agent)
   }
 }
@@ -73,7 +78,43 @@ export function installBridge(ctx: Context, settings: () => ResolvedSettings, op
   const contexts = new ExecutionContexts()
   const follow = new WeakMap<SearchSnapshot, { request?: FollowRequest; error?: string }>()
   const diagnostics: Readonly<FreshnessDiagnostic & { sessionId: string; connectionId: string | null; step: number }>[] = []
-  ctx.effect(() => () => { diagnostics.length = 0 }, 'private search diagnostics')
+  const restrictions = new WeakMap<object, () => void>()
+  const activeDisposers = new Set<() => void>()
+
+  function syncRestriction(agent: object, connectionId: string | null | undefined): void {
+    const typedAgent = agent as Agent
+    if (!typedAgent?.ctx) return
+    const rootTools = ctx.get('tools')
+    if (!rootTools?.get('web_search')) return
+    if (scopeOf(typedAgent.ctx) === undefined) return
+
+    const existing = restrictions.get(typedAgent)
+    if (connectionId === null) {
+      if (!existing) {
+        try {
+          const agentTools = typedAgent.ctx.get('tools')
+          if (!agentTools) return
+          const dispose = agentTools.restrict({ deny: ['web_search'] })
+          restrictions.set(typedAgent, dispose)
+          activeDisposers.add(dispose)
+        } catch { /* fail safe */ }
+      }
+    } else {
+      if (existing) {
+        restrictions.delete(typedAgent)
+        activeDisposers.delete(existing)
+        try { existing() } catch {}
+      }
+    }
+  }
+
+  ctx.effect(() => () => {
+    diagnostics.length = 0
+    for (const dispose of activeDisposers) {
+      try { dispose() } catch {}
+    }
+    activeDisposers.clear()
+  }, 'private search diagnostics')
   let openSelections: (() => Promise<SessionSelections>) | undefined
   const storageMount = ctx.inject(['storageDomain'], storageCtx => {
     let domain: ReturnType<typeof storageCtx.storageDomain.open<typeof selectionDomain>> | undefined
@@ -157,13 +198,20 @@ export function installBridge(ctx: Context, settings: () => ResolvedSettings, op
         if (currentModel?.model) {
           const expectedDefault = await resolveDefault(currentModel)
           if (expectedDefault !== selection.connectionId) {
-            return selections.updateDefault(session.id, expectedDefault)
+            const updated = await selections.updateDefault(session.id, expectedDefault)
+            syncRestriction(agent, updated.connectionId)
+            return updated
           }
         }
       }
 
+      if (agent) {
+        syncRestriction(agent, selection.connectionId)
+      }
+
       return selection
     },
+    syncRestriction,
   }
   ctx.on('agent/request', async (payload, next) => {
     const previous = contexts.peek(payload.agent)
@@ -199,7 +247,21 @@ export function installBridge(ctx: Context, settings: () => ResolvedSettings, op
     }
     return contexts.run(snapshot, binding, bindingError, next)
   })
-  ctx.on('agent/disposed', ({ agent }) => contexts.forget(agent))
+  ctx.on('agent/created', async ({ agent }) => {
+    try {
+      const selection = await runtime.initialize(agent.session, agent)
+      syncRestriction(agent, selection.connectionId)
+    } catch { /* storage may not be ready */ }
+  })
+  ctx.on('agent/disposed', ({ agent }) => {
+    contexts.forget(agent)
+    const dispose = restrictions.get(agent)
+    if (dispose) {
+      restrictions.delete(agent)
+      activeDisposers.delete(dispose)
+      try { dispose() } catch {}
+    }
+  })
   // session/disposed is NOT durable deletion. Never erase persisted selections there.
   ctx.inject(['sessionController', 'typert'], remoteCtx => { new SearchConnections(remoteCtx, runtime, store) })
   ctx.web.registerSearchProvider({

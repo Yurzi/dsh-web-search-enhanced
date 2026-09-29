@@ -145,7 +145,7 @@ export function SearchSelectorControl({ t, value, connections, pending, error, n
   const [open, setOpen] = useState(false)
   const selected = value?.selection.connectionId
   const current = connections.find(c => c.id === selected)
-  const label = !value ? t('search') : current?.id === SESSION_MODEL_ID ? t('followModel') : current?.label ?? (selected ? t('connectionUnavailable') : t('selectSearch'))
+  const label = !value ? t('search') : selected === null ? t('searchOff') : current?.id === SESSION_MODEL_ID ? t('followModel') : current?.label ?? (selected ? t('connectionUnavailable') : t('selectSearch'))
   useEffect(() => {
     const node = panel.current
     if (!node) return
@@ -176,11 +176,11 @@ export function SearchSelectorControl({ t, value, connections, pending, error, n
     <button ref={trigger} type="button" className="v2s-search-trigger" aria-label={t('searchConnection') + label}
       aria-haspopup="dialog" aria-expanded={open} aria-controls={id}
       data-state={error ? 'error' : pending ? 'saving' : notice ? 'saved' : 'ready'}
-      title={error || (pending ? t('saving') : notice || t('searchConnection') + (current?.label ?? t('notSelected')))}
+      title={error || (pending ? t('saving') : notice || (selected === null ? t('searchConnection') + t('searchOff') : t('searchConnection') + (current?.label ?? t('notSelected'))))}
       onClick={toggle}>
       <svg className={pending ? 'v2s-search-icon v2s-search-busy' : 'v2s-search-icon'} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c4 4 4 14 0 18M12 3c-4 4-4 14 0 18"/></svg>
       <span className="v2s-search-label">{label}</span>
-      {value ? <span className="v2s-search-mode">{t(value.freshness === 'auto' ? 'freshnessAuto' : value.freshness === 'fresh' ? 'freshnessFreshShort' : 'freshnessRealtimeShort')}</span> : null}
+      {value && selected !== null ? <span className="v2s-search-mode">{t(value.freshness === 'auto' ? 'freshnessAuto' : value.freshness === 'fresh' ? 'freshnessFreshShort' : 'freshnessRealtimeShort')}</span> : null}
       {error ? <span className="v2s-search-error-dot" aria-hidden="true">!</span> : notice ? <span className="v2s-search-check" aria-hidden="true">✓</span> : null}
       <svg className="v2s-search-chevron" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg>
     </button>
@@ -196,13 +196,16 @@ export function SearchSelectorControl({ t, value, connections, pending, error, n
         const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (index + (event.key === 'ArrowUp' ? -1 : 1) + items.length) % items.length
         items[next]?.focus()
       }}>
+      <div role="group" aria-label={t('searchOff')}>
+        <button type="button" className="v2s-search-option" disabled={!value || pending} aria-pressed={selected === null} onClick={() => { if (selected !== null) onSelect(null) }}><span>{t('searchOff')}</span><span className="v2s-search-option-check" aria-hidden="true">{selected === null ? '✓' : ''}</span></button>
+      </div>
       {(['model', 'structured'] as const).filter(kind => connections.some(c => c.kind === kind && c.configured)).map(kind => <div key={kind} role="group" aria-label={t(kind === 'model' ? 'modelSearch' : 'searchServices')}>
         <div className="v2s-search-group-title">{t(kind === 'model' ? 'modelSearch' : 'searchServices')}</div>
         {connections.filter(c => c.kind === kind && c.configured).map(c => <button key={c.id} type="button" className="v2s-search-option" disabled={!value || pending || !c.configured} aria-pressed={c.id === selected} onClick={() => { if (c.configured && c.id !== selected) onSelect(c.id) }}><span>{c.label}</span><span className="v2s-search-option-check" aria-hidden="true">{c.id === selected ? '✓' : ''}</span></button>)}
       </div>)}
       <div className="v2s-search-freshness" role="group" aria-label={t('sessionFreshness')}>
         <div className="v2s-search-group-title">{t('freshness')}</div>
-        <div className="v2s-search-segments">{(['auto', 'fresh', 'realtime'] as const).map(mode => <button key={mode} type="button" aria-pressed={value?.freshness === mode} disabled={!value || pending} onClick={() => { if (value?.freshness !== mode) onFreshness(mode) }}>{t(mode === 'auto' ? 'freshnessAuto' : mode === 'fresh' ? 'freshnessFresh' : 'freshnessRealtime')}</button>)}</div>
+        <div className="v2s-search-segments">{(['auto', 'fresh', 'realtime'] as const).map(mode => <button key={mode} type="button" aria-pressed={value?.freshness === mode} disabled={!value || pending || selected === null} onClick={() => { if (value?.freshness !== mode) onFreshness(mode) }}>{t(mode === 'auto' ? 'freshnessAuto' : mode === 'fresh' ? 'freshnessFresh' : 'freshnessRealtime')}</button>)}</div>
       </div>
       {error ? <div className="v2s-search-error" role="alert"><span>{error}</span><button type="button" disabled={pending} onClick={onRefresh}>{t('retry')}</button></div> : null}
     </div>

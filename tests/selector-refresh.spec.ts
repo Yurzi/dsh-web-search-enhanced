@@ -184,6 +184,20 @@ describe('mounted selector demand-driven refresh', () => {
     expect(f.remote.get).toHaveBeenCalledTimes(1)
   })
 
+  it('persists closing search with connectionId: null when selecting off', async () => {
+    const f = fixture()
+    f.remote.set.mockResolvedValueOnce({
+      ok: true,
+      value: { selection: { connectionId: null, revision: 1 }, freshness: 'auto', connections: [] },
+    })
+    const renderer = await mount(f.props())
+    await act(async () => { control(renderer).onSelect(null) })
+    expect(f.remote.set).toHaveBeenCalledWith({ sessionId: 'session-one', connectionId: null, expectedRevision: 0 })
+    expect(control(renderer).value?.selection).toEqual({ connectionId: null, revision: 1 })
+    expect(control(renderer).pending).toBe(false)
+    expect(control(renderer).notice).toBe(zh.selectionSaved)
+  })
+
   it('forces a fresh GET after a conflict and keeps its error visible', async () => {
     const f = fixture()
     const renderer = await mount(f.props())
