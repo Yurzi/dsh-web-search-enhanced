@@ -1,4 +1,4 @@
-/** Real 0.1.7 Loader/profile/ConfigEditor integration, not the removed SettingsProvider. */
+/** Real 0.2.0-rc.1 Loader/profile/ConfigEditor integration, not the removed SettingsProvider. */
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -12,7 +12,7 @@ import * as plugin from '../src/index.ts'
 
 const cleanups: Array<() => unknown> = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); vi.restoreAllMocks() })
-async function fixture(options: { legacy?: Record<string, unknown>; entryId?: string; credentials?: boolean } = {}) {
+async function fixture(options: { legacy?: Record<string, unknown>; entryId?: string; credentials?: boolean; inherited?: Record<string, unknown> } = {}) {
   const home = realpathSync(mkdtempSync(join(tmpdir(), 'search-profile-')))
   cleanups.push(() => rmSync(home, { recursive: true, force: true }))
   const dir = join(home, 'profiles', 'test')
@@ -26,7 +26,7 @@ async function fixture(options: { legacy?: Record<string, unknown>; entryId?: st
     { id: 'config-editor', name: 'cordis:editor' },
     { id: 'settings', name: 'cordis:settings' },
     { id: 'web', name: 'cordis:web', config: { searchProvider: plugin.DEFAULT_PROVIDER_ID } },
-    { id: ns, name: 'cordis:search' },
+    { id: ns, name: 'cordis:search', ...(options.inherited ? { config: options.inherited } : {}) },
   ] }]))
   writeFileSync(join(dir, 'cordis.yml'), JSON.stringify([]))
   if (options.legacy) writeFileSync(join(home, 'settings.yaml'), JSON.stringify({ [ns]: options.legacy }))
@@ -52,6 +52,26 @@ async function fixture(options: { legacy?: Record<string, unknown>; entryId?: st
 }
 
 describe('profile-backed volatile search settings', () => {
+  it('keeps bundle defaults as the inherited base across profile edits, restart and reset', async () => {
+    const inherited = { defaultConnection: 'builtin:exa', freshness: 'fresh' }
+    const h = await fixture({ inherited })
+    expect(h.descriptor().base).toMatchObject(inherited)
+    expect(h.descriptor().value).toMatchObject(inherited)
+    expect(h.descriptor().user).toEqual({})
+    await h.ctx.settings.update(h.ns, { freshness: 'realtime' }, h.descriptor().revision)
+    expect(h.descriptor().base).toMatchObject(inherited)
+    expect(h.descriptor().value).toMatchObject({ defaultConnection: 'builtin:exa', freshness: 'realtime' })
+    // Cordis replaces the config object, so the host carries forward inherited fields.
+    expect(h.descriptor().user).toEqual({ ...inherited, freshness: 'realtime' })
+    await h.ctx.fiber.dispose()
+    const restored = await h.start()
+    expect(h.descriptor(restored).base).toMatchObject(inherited)
+    expect(h.descriptor(restored).value).toMatchObject({ defaultConnection: 'builtin:exa', freshness: 'realtime' })
+    expect(h.descriptor(restored).user).toEqual({ ...inherited, freshness: 'realtime' })
+    await restored.settings.mutate(h.ns, [{ op: 'unset', path: ['freshness'] }], h.descriptor(restored).revision)
+    expect(h.descriptor(restored).value).toMatchObject(inherited)
+    expect(h.descriptor(restored).user).toEqual({})
+  })
   it('updates live references without remounting and restores sparse preferences on restart', async () => {
     const h = await fixture({ entryId: 'search-alias' })
     const fiber = [...h.ctx.loader.entries()].find(e => e.options.id === h.ns)!.fiber!
