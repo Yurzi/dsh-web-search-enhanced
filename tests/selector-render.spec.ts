@@ -51,4 +51,12 @@ describe('compact native-style search picker',()=>{
     expect(html).toContain('role="alert"');expect(html).toContain('重试')
     expect(html).toContain('disabled=""');expect(html).toContain('保存失败')
   })
+  it('unifies responsive design boundaries with official conversation.input.model',()=>{
+    expect(selectorCss).toContain('--dsh-composer-model-text-display')
+    expect(selectorCss).toContain('data-model-compact')
+    expect(selectorCss).toContain('max-width:min(360px,45cqw)')
+    expect(selectorCss).not.toContain('@container(width<=420px)')
+    expect(selectorCss).not.toContain('@container(width<=360px)')
+    expect(selectorCss).toContain('.v2s-search-mode { flex-shrink:1000;')
+  })
 })
