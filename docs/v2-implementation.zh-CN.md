@@ -56,7 +56,7 @@ node scripts/verify-package.mjs
 | [keyless-access.spec.ts](../tests/keyless-access.spec.ts) | 显式匿名 / 个人模式、官方地址限制、匿名不读 Key、拒绝不转付费 |
 | [protocols.spec.ts](../tests/protocols.spec.ts)、[provider.spec.ts](../tests/provider.spec.ts) | 三种模型协议、固定 provider 兼容辅助接口 |
 | [plugin.spec.ts](../tests/plugin.spec.ts)、[bundle.spec.ts](../tests/bundle.spec.ts)、[egress.spec.ts](../tests/egress.spec.ts) | 插件导出、bundle / patch 契约、fetchProvider 不受干扰、出站 transport |
-| [v2-client.spec.ts](../tests/v2-client.spec.ts)、[client-settings.spec.ts](../tests/client-settings.spec.ts) | 当前与兼容设置辅助逻辑、稀疏写入、凭据独立操作 |
+| [v2-client.spec.ts](../tests/v2-client.spec.ts) | 当前设置辅助逻辑、稀疏写入、凭据独立操作与多语言对齐 |
 | [settings-render.spec.ts](../tests/settings-render.spec.ts)、[selector-render.spec.ts](../tests/selector-render.spec.ts) | SSR 结构、折叠态、紧凑选择器、不可用项与状态 |
 | [client-injection.spec.ts](../tests/client-injection.spec.ts) | Remote 命名空间注入顺序和生命周期 |
 

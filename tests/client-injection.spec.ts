@@ -69,6 +69,7 @@ it('mounts before injecting, binds callbacks to the Session, and follows namespa
   const h = await fixture()
   expect(client.inject).not.toContain('remote.searchConnections')
   expect(client.inject).toContain('configForms')
+  expect(client.inject).toContain('remote.credentials')
   expect(client.inject).not.toContain('sessions')
   const plugin = h.ctx.plugin(client)
   await plugin

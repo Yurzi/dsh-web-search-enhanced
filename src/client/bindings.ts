@@ -1,6 +1,12 @@
 import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import type { CredentialRemote } from './SearchSettingsCard.tsx'
+export interface CredentialRemoteFailure { ok: false; error: { message: string } }
+export interface CredentialRemoteSuccess<T> { ok: true; value: T }
+export type CredentialRemoteResult<T> = CredentialRemoteSuccess<T> | CredentialRemoteFailure
+export interface CredentialRemote {
+  describe: (refs: string[]) => Promise<CredentialRemoteResult<Record<string, { configured: boolean; writable?: boolean }>>>
+  set: (ref: string, value: string) => Promise<CredentialRemoteResult<unknown>>
+}
 import type { SelectionClient, SelectionReadOptions } from './selection-client.ts'
 
 /** Services stay in the apply world; the renderer binds this bare source to useSettings. */

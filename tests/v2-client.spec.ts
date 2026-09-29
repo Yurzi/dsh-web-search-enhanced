@@ -3,6 +3,7 @@ import YAML from 'yaml'
 import { sparseSettingOperations, resetSettingsOperations, parseConnectionDraft, saveV2Credential } from '../src/client/V2Settings.tsx'
 import { createResponseGuard, discoverableConnections } from '../src/client/SearchConnectionSelector.tsx'
 import { SESSION_MODEL_ID } from '../src/catalog.ts'
+import { en, zh } from '../src/client/locales.ts'
 
 describe('V2 sparse settings helpers', () => {
   it('does not write catalog, defaults or a version-only document', () => {
@@ -110,5 +111,11 @@ describe('session response fencing', () => {
     expect(discoverableConnections(connections).map(c => c.id)).toEqual(['builtin:exa', SESSION_MODEL_ID])
     expect(connections[0]?.id).toBe(SESSION_MODEL_ID)
     expect(discoverableConnections(connections)[1]?.reason).toBe('host unavailable')
+  })
+})
+
+describe('client locales', () => {
+  it('keeps Chinese and English dictionaries structurally paired', () => {
+    expect(Object.keys(zh).sort()).toEqual(Object.keys(en).sort())
   })
 })

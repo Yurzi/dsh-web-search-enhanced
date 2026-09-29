@@ -4,7 +4,14 @@ import { readFileSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 
-const env = { ...process.env, npm_config_cache: join(tmpdir(), 'npm-cache'), PNPM_HOME: join(tmpdir(), 'pnpm-home') }
+const env = {
+  ...process.env,
+  npm_config_cache: join(tmpdir(), 'npm-cache'),
+  PNPM_HOME: join(tmpdir(), 'pnpm-home'),
+  XDG_DATA_HOME: join(tmpdir(), 'pnpm-data'),
+  XDG_STATE_HOME: join(tmpdir(), 'pnpm-state'),
+  XDG_CONFIG_HOME: join(tmpdir(), 'pnpm-config'),
+}
 // Verification must never overwrite or remove an existing release artifact.
 const dir = mkdtempSync(join(tmpdir(), 'dsh-web-search-enhanced-'))
 try {
