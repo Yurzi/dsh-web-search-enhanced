@@ -1,4 +1,4 @@
-/** Real 0.2.0-rc.1 Loader/profile/ConfigEditor integration, not the removed SettingsProvider. */
+/** Real 0.2.0-rc.2 Loader/profile/ConfigEditor integration, not the removed SettingsProvider. */
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'

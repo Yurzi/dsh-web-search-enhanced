@@ -1,4 +1,6 @@
 import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { parse } from 'yaml'
 import { runInNewContext } from 'node:vm'
 import { Context } from '@deepseek-ai/cordis'
 import WebRuntime from '@deepseek-ai/dsh-web'
@@ -11,6 +13,7 @@ interface Manifest {
   readonly engines: { dsh: string }
   readonly peerDependencies: Record<string, string>
   readonly devDependencies: Record<string, string>
+  readonly dependencies: Record<string, string>
   readonly files: readonly string[]
   readonly exports: Record<string, unknown>
   readonly dsh?: {
@@ -36,16 +39,31 @@ function readClientBundle(): string | undefined {
 }
 
 describe('installable DSH profile bundle', () => {
-  it('requires DSH 0.2.0-rc.1 and builds against that exact prerelease', () => {
-    expect(manifest.engines.dsh).toBe('>=0.2.0-rc.1')
+  it('requires DSH 0.2.0-rc.2 and builds against that exact prerelease', () => {
+    expect(manifest.engines.dsh).toBe('>=0.2.0-rc.2')
     for (const [name, range] of Object.entries(manifest.peerDependencies)) {
-      if (name.startsWith('@deepseek-ai/dsh-')) expect(range).toBe('^0.2.0-rc.1')
+      if (name.startsWith('@deepseek-ai/dsh-')) expect(range).toBe('^0.2.0-rc.2')
     }
     for (const [name, version] of Object.entries(manifest.devDependencies)) {
-      if (name.startsWith('@deepseek-ai/dsh-')) expect(version).toBe('0.2.0-rc.1')
+      if (name.startsWith('@deepseek-ai/dsh-')) expect(version).toBe('0.2.0-rc.2')
     }
     expect(manifest.devDependencies).not.toHaveProperty('@deepseek-ai/dsh-code-runtime')
     expect(manifest.dsh?.client?.inject).toContain('@deepseek-ai/dsh-client-ui-session')
+  })
+  it('keeps the lockfile on rc.2 and shares the upstream Zod schema baseline', () => {
+    const lock = parse(readFileSync(new URL('../pnpm-lock.yaml', import.meta.url), 'utf8')) as { packages: Record<string, unknown>; overrides: Record<string, string> }
+    const dshPackages = Object.keys(lock.packages).filter(name => name.startsWith('@deepseek-ai/dsh-'))
+    expect(dshPackages.length).toBeGreaterThan(0)
+    expect(dshPackages.every(name => name.endsWith('@0.2.0-rc.2'))).toBe(true)
+    expect(manifest.dependencies.zod).toBe('^4.4.3')
+    expect(lock.overrides.zod).toBe('4.4.3')
+    const require = createRequire(import.meta.url)
+    expect(require('zod/package.json').version).toBe('4.4.3')
+    for (const name of ['@deepseek-ai/dsh-storage-domain', '@deepseek-ai/dsh-typert-registry', '@deepseek-ai/dsh-api-remotes']) {
+      const hostRequire = createRequire(require.resolve(name + '/package.json'))
+      expect(hostRequire('zod/package.json').version).toBe('4.4.3')
+      expect(hostRequire.resolve('zod')).toBe(require.resolve('zod'))
+    }
   })
   it('publishes built artifacts and bundle configuration', () => {
     expect(manifest.name).toBe('dsh-web-search-enhanced')

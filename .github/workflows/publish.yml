@@ -22,14 +22,14 @@ jobs:
           runtime: node@22
           cache: true
 
-      - name: Type check
-        run: pnpm run typecheck
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
 
-      - name: Run tests
-        run: pnpm test
+      - name: Verify release tag
+        run: node --input-type=module -e 'import { readFileSync } from "node:fs"; const pkg = JSON.parse(readFileSync("package.json", "utf8")); if (process.env.GITHUB_REF_NAME !== "v" + pkg.version) throw new Error("Release tag does not match package version")'
 
-      - name: Build package
-        run: pnpm run build
+      - name: Check types, build, tests and packed contract
+        run: pnpm run check
 
       - name: Publish to npm
         run: pnpm publish --access public --no-git-checks --provenance

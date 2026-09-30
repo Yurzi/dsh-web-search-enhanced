@@ -11,4 +11,5 @@ jobs:
         with:
           runtime: node@latest
           cache: true
+      - run: pnpm install --frozen-lockfile
       - run: pnpm run check

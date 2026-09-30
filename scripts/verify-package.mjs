@@ -30,7 +30,14 @@ try {
     assert.ok(readFileSync(join(dir, 'package', path)).length > 0, 'missing packed artifact: ' + path)
   }
   assert.equal(pkg.dsh.bundle.patch, './cordis.patch.yml')
-  assert.equal(pkg.engines.dsh, '>=0.2.0-rc.1')
+  assert.equal(pkg.engines.dsh, '>=0.2.0-rc.2')
+  for (const [name, range] of Object.entries(pkg.peerDependencies)) {
+    if (name.startsWith('@deepseek-ai/dsh-')) assert.equal(range, '^0.2.0-rc.2', name)
+  }
+  for (const [name, version] of Object.entries(pkg.devDependencies)) {
+    if (name.startsWith('@deepseek-ai/dsh-')) assert.equal(version, '0.2.0-rc.2', name)
+  }
+  assert.equal(pkg.dependencies.zod, '^4.4.3')
   assert.ok(pkg.dsh.client.inject.includes('@deepseek-ai/dsh-client-ui-plugin-manager'))
   assert.ok(pkg.dsh.client.inject.includes('@deepseek-ai/dsh-client-ui-session'))
   console.log('packed plugin contract verified:', basename(tarball))

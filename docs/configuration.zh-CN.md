@@ -1,12 +1,12 @@
-# 0.1.5 配置参考
+# 0.1.6 配置参考
 
-本指南面向安装版插件。包版本为 **0.1.5**，配置格式的 `version` 为 **2**；两者不是同一版本号。快速开始见 [README](../README.md)，旧版用户先读[升级指南](migration.zh-CN.md)。
+本指南面向安装版插件。包版本为 **0.1.6**，配置格式的 `version` 为 **2**；两者不是同一版本号。快速开始见 [README](../README.md)，旧版用户先读[升级指南](migration.zh-CN.md)。
 
 ## 配置入口与作用范围
 
 在 DSH 设置的 Web Search Enhanced 卡片管理搜索连接、凭据引用与新会话默认值，在已有会话输入区选择搜索连接和内容实时性。搜索连接独立于对话模型。设置按宿主 ConfigForms / ConfigForm 保存 profile 稀疏覆盖，不复制整个内置目录；恢复继承设置、删除用户连接覆盖均不删除 Credentials。继承层中的连接在移除用户覆盖后仍可能存在。
 
-以下 YAML 均为 DSH 0.2.0-rc.1 的 profile patch 条目，`id: web-search-enhanced` 是安装补丁的固定条目 ID，字段置于 `config` 下。旧 `settings.yaml` 由宿主导入后不再作为实时配置源；优先使用插件管理器中的配置页，避免覆盖其他插件设置。专属客户端配置页绑定默认条目 ID，不支持任意改名或多个搜索插件实例。
+以下 YAML 均为 DSH 0.2.0-rc.2 的 profile patch 条目，`id: web-search-enhanced` 是安装补丁的固定条目 ID，字段置于 `config` 下。旧 `settings.yaml` 由宿主导入后不再作为实时配置源；优先使用插件管理器中的配置页，避免覆盖其他插件设置。专属客户端配置页绑定默认条目 ID，不支持任意改名或多个搜索插件实例。
 
 ```yaml
 - id: web-search-enhanced

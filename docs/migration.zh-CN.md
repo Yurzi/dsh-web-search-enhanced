@@ -1,10 +1,10 @@
-# 升级到 0.1.5 / DSH 0.2.0-rc.1
+# 升级到 0.1.6 / DSH 0.2.0-rc.2
 
-0.1.5 将最低宿主版本提高为 **0.2.0-rc.1**，沿用 0.1.3 已完成的 Loader 动态配置、profile-backed SettingsForms、ConfigForms 客户端、惰性 Typert codec 和新版 PTC 适配。从 0.1.3 / 0.1.4 升级不需要新的配置或存储迁移；详见 [0.2.0-rc.1 影响评估](upstream-0.2.0-rc.1-assessment.zh-CN.md)。旧版已采用的**会话级搜索连接**保持不变：包版本 0.1.5、设置格式 version 2、会话 Storage Domain version 1 是三个不同概念。完整参数见[配置参考](configuration.zh-CN.md)。
+0.1.6 将最低宿主版本提高为 **0.2.0-rc.2**，沿用 0.1.3 已完成的 Loader 动态配置、profile-backed SettingsForms、ConfigForms 客户端、惰性 Typert codec 和新版 PTC 适配。从 0.1.3 / 0.1.4 / 0.1.5 升级不需要新的配置或存储迁移；详见 [0.2.0-rc.2 影响评估](upstream-0.2.0-rc.2-assessment.zh-CN.md)。旧版已采用的**会话级搜索连接**保持不变：包版本 0.1.6、设置格式 version 2、会话 Storage Domain version 1 是三个不同概念。完整参数见[配置参考](configuration.zh-CN.md)。
 
 ## 1. 升级前准备
 
-- 确认 DSH 满足 `>=0.2.0-rc.1`，Node 满足 `^22.19.0 || >=24.0.0`。实现基线是 0.2.0-rc.1 契约，不代表对所有未来宿主版本均完成验证。
+- 确认 DSH 满足 `>=0.2.0-rc.2`，Node 满足 `^22.19.0 || >=24.0.0`。实现基线是 0.2.0-rc.2 契约，不代表对所有未来宿主版本均完成验证。
 - 备份当前插件版本、Web profile / 插件配置和 DSH 持久存储。凭据使用宿主安全备份方式，不复制到公开 Issue 或仓库。
 - 记录旧 `modelMode`、协议、模型、endpoint、凭据引用，以及希望保留的会话选择。
 - 推荐升级前先将明文 `apiKey` 移到 DSH Credentials 并从配置来源删除。兼容导入仅允许旧格式短暂携带 Key：先验证转换结果，再写 Credentials，最后 CAS 替换 profile 配置。V2 配置仍拒绝明文 Key；已有不同值的同名凭据不会被自动覆盖。
@@ -12,16 +12,20 @@
 
 ## 2. 安装发行包
 
-从当前源码运行 `pnpm install --frozen-lockfile && pnpm run check && pnpm pack`，或使用 [Releases](https://github.com/Yurzi/dsh-web-search-enhanced/releases) 中实际发布的 0.1.5 构建包。使用绝对路径交给 DSH 插件管理器：
+DSH rc.2 对已安装插件不支持直接自动升级。先完成备份、停止相关任务，通过插件管理器卸载旧插件（CLI 使用 `dsh plugin --profile web remove dsh-web-search-enhanced`），再安装下述固定版本；卸载可能改变 profile 补丁，安装后核对原设置、凭据引用和会话选择，不要清空持久存储。使用 `--profile desktop` 时须先启动过一次 Desktop 初始化 profile，并完全退出 Desktop 后执行 CLI。
+
+若跟随 pi-ai 内置 DeepSeek 目录，升级宿主后重新选择 `deepseek-flash`，检查旧 `deepseek-v4-flash` / `deepseek-v4-flash-vision-exp` 及其 overrides、默认模型和子代理设置。只针对这条目录路由，不机械替换私有端点的 ID；本插件不会改写用户模型配置。
+
+从当前源码运行 `pnpm install --frozen-lockfile && pnpm run check && pnpm pack`，或使用 [Releases](https://github.com/Yurzi/dsh-web-search-enhanced/releases) 中实际发布的 0.1.6 构建包。使用绝对路径交给 DSH 插件管理器：
 
 ```sh
-dsh plugin --profile web add /absolute/path/to/dsh-web-search-enhanced-0.1.5.tgz
+dsh plugin --profile web add /absolute/path/to/dsh-web-search-enhanced-0.1.6.tgz
 ```
 
 若该版本已在 npm 发布，也可安装固定版本：
 
 ```sh
-dsh plugin --profile web add dsh-web-search-enhanced@0.1.5
+dsh plugin --profile web add dsh-web-search-enhanced@0.1.6
 ```
 
 发布附件中的构建 tgz 与 GitHub 自动生成的 Source code archive 不同：后者是源码，不能假定含 `lib/` 构建产物。npm 可用性须以 registry 实际发布结果为准，GitHub 标签 / Release 存在不代表 npm 已完成。

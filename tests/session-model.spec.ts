@@ -166,6 +166,19 @@ describe('settings-first follow bindings', () => {
 })
 
 describe('optional pi-ai catalog completion', () => {
+  it('follows the rc.2 DeepSeek Flash catalog ID without rewriting it', () => {
+    const c = catalog([{ id: 'deepseek-flash', api: 'openai-completions', baseUrl: 'https://api.deepseek.com' }])
+    const settings = captureFollowSettings(host({ chat: { apiKeyEnv: 'CHAT_TEST_KEY' } }, c.adapter).ctx).settings
+    expect(resolveFollowBinding(settings, { provider: 'chat', model: 'deepseek-flash' })).toEqual({
+      mode: 'fixed', model: 'deepseek-flash', protocol: 'openai-chat-completions', baseURL: 'https://api.deepseek.com', credentialRef: 'CHAT_TEST_KEY',
+    })
+    for (const model of ['deepseek-v4-flash', 'deepseek-v4-flash-vision-exp']) {
+      unsupported(() => resolveFollowBinding(settings, { provider: 'chat', model }))
+    }
+  })
+  it.each(['deepseek-v4-flash', 'deepseek-v4-flash-vision-exp'])('preserves a private explicit model ID: %s', model => {
+    expect(binding(explicit({ models: [{ id: model }] }), model).model).toBe(model)
+  })
   it.each([
     { apiKeyEnv: 'CHAT_TEST_KEY' },
     { apiKeyEnv: 'CHAT_TEST_KEY', api: 'anthropic-messages' },
