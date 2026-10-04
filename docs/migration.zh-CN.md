@@ -1,6 +1,6 @@
-# 升级到 0.1.6 / DSH 0.2.0-rc.2
+# 升级到 0.1.7 / DSH 0.2.0-rc.2
 
-0.1.6 将最低宿主版本提高为 **0.2.0-rc.2**，沿用 0.1.3 已完成的 Loader 动态配置、profile-backed SettingsForms、ConfigForms 客户端、惰性 Typert codec 和新版 PTC 适配。从 0.1.3 / 0.1.4 / 0.1.5 升级不需要新的配置或存储迁移；详见 [0.2.0-rc.2 影响评估](upstream-0.2.0-rc.2-assessment.zh-CN.md)。旧版已采用的**会话级搜索连接**保持不变：包版本 0.1.6、设置格式 version 2、会话 Storage Domain version 1 是三个不同概念。完整参数见[配置参考](configuration.zh-CN.md)。
+0.1.7 沿用最低宿主版本 **0.2.0-rc.2**，沿用 0.1.3 已完成的 Loader 动态配置、profile-backed SettingsForms、ConfigForms 客户端、惰性 Typert codec 和新版 PTC 适配。从 0.1.3 / 0.1.4 / 0.1.5 / 0.1.6 的 V2 配置升级不需要新的配置或存储格式转换，本版增强旧配置迁移的版本识别和并发保护；详见 [0.2.0-rc.2 影响评估](upstream-0.2.0-rc.2-assessment.zh-CN.md)。旧版已采用的**会话级搜索连接**保持不变：包版本 0.1.7、设置格式 version 2、会话 Storage Domain version 1 是三个不同概念。完整参数见[配置参考](configuration.zh-CN.md)。
 
 ## 1. 升级前准备
 
@@ -16,25 +16,27 @@ DSH rc.2 对已安装插件不支持直接自动升级。先完成备份、停�
 
 若跟随 pi-ai 内置 DeepSeek 目录，升级宿主后重新选择 `deepseek-flash`，检查旧 `deepseek-v4-flash` / `deepseek-v4-flash-vision-exp` 及其 overrides、默认模型和子代理设置。只针对这条目录路由，不机械替换私有端点的 ID；本插件不会改写用户模型配置。
 
-从当前源码运行 `pnpm install --frozen-lockfile && pnpm run check && pnpm pack`，或使用 [Releases](https://github.com/Yurzi/dsh-web-search-enhanced/releases) 中实际发布的 0.1.6 构建包。使用绝对路径交给 DSH 插件管理器：
+从当前源码运行 `pnpm install --frozen-lockfile && pnpm run check && pnpm pack`，或使用 [Releases](https://github.com/Yurzi/dsh-web-search-enhanced/releases) 中实际发布的 0.1.7 构建包。使用绝对路径交给 DSH 插件管理器：
 
 ```sh
-dsh plugin --profile web add /absolute/path/to/dsh-web-search-enhanced-0.1.6.tgz
+dsh plugin --profile web add /absolute/path/to/dsh-web-search-enhanced-0.1.7.tgz
 ```
 
 若该版本已在 npm 发布，也可安装固定版本：
 
 ```sh
-dsh plugin --profile web add dsh-web-search-enhanced@0.1.6
+dsh plugin --profile web add dsh-web-search-enhanced@0.1.7
 ```
 
 发布附件中的构建 tgz 与 GitHub 自动生成的 Source code archive 不同：后者是源码，不能假定含 `lib/` 构建产物。npm 可用性须以 registry 实际发布结果为准，GitHub 标签 / Release 存在不代表 npm 已完成。
 
 安装补丁选择 enhanced-search、禁用默认 web-search-deepseek，并明确将新会话默认设为 Exa；不改 fetchProvider。已有部署请审阅插件管理器反馈和 Web profile，避免重复注册条目，不要用整份示例覆盖所有宿主配置。
 
-本次未改变插件前后端业务契约，但宿主依赖与构建产物已更新。重新加载插件或重启 DSH，**然后刷新 Web 页面**；只刷新浏览器不足以更新服务端。此操作可能影响运行中任务，应在合适时机进行。
+本次未改变搜索业务契约和宿主依赖基线，但配置迁移逻辑与前后端构建产物已更新。重新加载插件或重启 DSH，**然后刷新 Web 页面**；只刷新浏览器不足以更新服务端。此操作可能影响运行中任务，应在合适时机进行。
 
 ## 3. 启动时自动迁移旧配置
+
+配置版本机制沿用 `version`，现已统一到逐版本迁移入口：显式 `version: 1` 与无版本旧模型配置均可自动升级；无版本连接配置保持 V2 兼容，未来版本拒绝降级。迁移保留已有连接、freshness 与显式 defaultConnection，执行中收到并发编辑会在结束后重新读取最新 revision。完整设计与事务边界见[配置版本设计](config-versioning.zh-CN.md)。
 
 插件不再自行注册 Settings section 或直接改写 settings.yaml。DSH 0.1.7 在 Loader 就绪后将旧 settings.yaml 重命名为 settings.yaml.imported，并尝试导入到 profile 条目；插件监听该条目的表单 / volatile 更新，再迁移成 V2 连接结构。保存使用 revision CAS，不能覆盖并发编辑。新旧宿主的配置持久化架构不同，不应只修改版本号或复制整份旧 YAML 到 profile。未完成迁移时搜索 fail-closed，普通聊天不因此被替换或阻断。
 

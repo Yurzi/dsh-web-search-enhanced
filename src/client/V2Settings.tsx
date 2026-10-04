@@ -3,6 +3,7 @@ import type { CredentialRemote, SearchLocaleProps, SettingsFace } from './bindin
 import type { SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
 import YAML from 'yaml'
 import type { V2Config } from '../config.ts'
+import { configVersion, CURRENT_CONFIG_VERSION } from '../config-version.ts'
 import { CATALOG, SESSION_MODEL_ID, SESSION_MODEL_LABEL } from '../catalog.ts'
 import { freshnessLabels } from './SearchConnectionSelector.tsx'
 import { v2CardCss } from './v2-settings.css.ts'
@@ -18,6 +19,8 @@ const equal = (a: unknown, b: unknown): boolean => {
 export interface SparseSnapshot { base?: unknown; user?: unknown }
 /** Update only the edited path; catalog defaults never materialize as settings. */
 export function sparseSettingOperations(snapshot: SparseSnapshot, path: string[], target: unknown, fallback?: unknown): SettingsPathOpView[] {
+  const effective = { ...object(snapshot.base), ...object(snapshot.user) }
+  if (configVersion(effective) !== CURRENT_CONFIG_VERSION) throw new Error('settings migration required')
   const at = (root: unknown) => path.reduce<unknown>((v, key) => object(v)[key], root)
   const inherited = at(snapshot.base) ?? fallback
   const user = at(snapshot.user)
@@ -31,10 +34,11 @@ export function sparseSettingOperations(snapshot: SparseSnapshot, path: string[]
   if (target === undefined || equal(target, inherited)) {
     if (user !== undefined) ops.push({ op: 'unset', path })
   } else if (!equal(sparse, user)) ops.push({ op: 'set', path, value: sparse as Extract<SettingsPathOpView, { op: 'set' }>['value'] })
-  if (ops.some(op => op.op === 'set') && object(snapshot.base).version !== 2 && object(snapshot.user).version !== 2) ops.push({ op: 'set', path: ['version'], value: 2 })
+  if (ops.some(op => op.op === 'set') && effective.version !== CURRENT_CONFIG_VERSION) ops.push({ op: 'set', path: ['version'], value: CURRENT_CONFIG_VERSION })
   return ops
 }
 export function resetSettingsOperations(snapshot: SparseSnapshot): SettingsPathOpView[] {
+  if (configVersion({ ...object(snapshot.base), ...object(snapshot.user) }) !== CURRENT_CONFIG_VERSION) throw new Error('settings migration required')
   return ['version', 'freshness', 'defaultConnection', 'connections'].filter(k => Object.hasOwn(object(snapshot.user), k)).map(k => ({ op: 'unset', path: [k] }))
 }
 /** YAML is configuration only; consent is always supplied by the separate checkbox. */

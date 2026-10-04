@@ -104,6 +104,42 @@ describe('profile-backed volatile search settings', () => {
     expect(h.descriptor().value).not.toHaveProperty('modelMode')
     expect(h.descriptor().value).not.toHaveProperty('maxTokens')
   })
+  it('migrates explicit V1 and persists the version across restart', async () => {
+    const h = await fixture({ legacy: { version: 1, modelMode: 'current-session', freshness: 'fresh', connections: { 'builtin:exa': { disabled: true } } } })
+    await vi.waitFor(() => expect(h.descriptor().value).toMatchObject({ version: 2, freshness: 'fresh', connections: { 'builtin:exa': { disabled: true } } }))
+    await h.ctx.fiber.dispose()
+    const restored = await h.start()
+    expect(h.descriptor(restored).value).toMatchObject({ version: 2, freshness: 'fresh' })
+    expect(h.credentials.set).not.toHaveBeenCalled()
+  })
+  it('rejects future versions before writing the profile', async () => {
+    const h = await fixture()
+    const before = readFileSync(h.profile.patchPath, 'utf8')
+    await expect(h.ctx.settings.update(h.ns, { version: 3, model: 'future' })).rejects.toThrow('unsupported settings version')
+    expect(readFileSync(h.profile.patchPath, 'utf8')).toBe(before)
+    expect(h.credentials.set).not.toHaveBeenCalled()
+  })
+  it('replans concurrent legacy edits received while Credentials is pending', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const h = await fixture()
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const resolve = h.credentials.resolve.getMockImplementation()!
+    h.credentials.resolve.mockImplementationOnce(async ref => { await gate; return resolve(ref) })
+    await h.ctx.settings.update(h.ns, { version: 1, model: 'search', apiKey: 'fixture-race-key', maxTokens: 100 })
+    await vi.waitFor(() => expect(h.credentials.resolve).toHaveBeenCalled())
+    await h.ctx.settings.update(h.ns, { maxTokens: 200 }, h.descriptor().revision)
+    release()
+    await vi.waitFor(() => expect(h.descriptor().value).toMatchObject({ version: 2, connections: { 'custom:legacy': { options: { maxTokens: 200 } } } }))
+    expect(h.credentials.set).toHaveBeenCalledTimes(1)
+    expect(readFileSync(h.profile.patchPath, 'utf8')).not.toContain('fixture-race-key')
+  })
+  it('keeps V1 identity when the only historical field is apiKey', async () => {
+    const h = await fixture({ legacy: { apiKey: 'fixture-key-only' } })
+    await vi.waitFor(() => expect(h.descriptor().value).toMatchObject({ version: 2, defaultConnection: 'custom:legacy' }))
+    expect(h.secrets.get('WEB_SEARCH_ENHANCED_API')).toBe('fixture-key-only')
+    expect(h.descriptor().value).not.toHaveProperty('apiKey')
+  })
   it('moves literal credentials before removing legacy values from the active profile', async () => {
     const h = await fixture({ legacy: { model: 'search', apiKey: 'fixture-legacy-key', apiKeyEnv: 'LEGACY_SEARCH' } })
     await vi.waitFor(() => expect(h.descriptor().value).toHaveProperty('version', 2))

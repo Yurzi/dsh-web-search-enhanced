@@ -11,6 +11,13 @@ describe('V2 sparse settings helpers', () => {
     expect(sparseSettingOperations({}, ['defaultConnection'], undefined)).toEqual([])
     expect(resetSettingsOperations({})).toEqual([])
   })
+  it('refuses to overwrite or reset future and unmigrated versions', () => {
+    for (const version of [1, 3]) {
+      const snapshot = { base: { version: 2 }, user: { version } }
+      expect(() => sparseSettingOperations(snapshot, ['freshness'], 'fresh')).toThrow()
+      expect(() => resetSettingsOperations(snapshot)).toThrow()
+    }
+  })
   it('sets only a preference and initial version', () => {
     expect(sparseSettingOperations({}, ['freshness'], 'realtime', 'auto')).toEqual([
       { op: 'set', path: ['freshness'], value: 'realtime' }, { op: 'set', path: ['version'], value: 2 },

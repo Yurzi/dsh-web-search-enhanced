@@ -63,16 +63,16 @@
 - **DeepSeek Harness**：≥ `0.2.0-rc.2`
 - **Node.js**：`^22.19.0 || >=24.0.0`
 
-本版将 DSH 基线提升到 0.2.0-rc.2，保留动态配置、插件设置页和会话 projection 架构，无需新的配置或存储迁移。跟随模型仍要求 API Key；使用 pi-ai 内置 DeepSeek 目录时，请重新选择 `deepseek-flash` 并检查旧模型 overrides，本插件不会自动改名。详见[0.2.0-rc.2 影响评估](docs/upstream-0.2.0-rc.2-assessment.zh-CN.md)。升级前请备份 profile 和旧设置。
+本版沿用 DSH 0.2.0-rc.2 基线，完善配置版本判定与逐版本自动迁移；现有 V2 配置和会话存储格式不变，显式 V1 与无版本旧模型配置可自动升级。详见[配置版本设计](docs/config-versioning.zh-CN.md)。跟随模型仍要求 API Key；使用 pi-ai 内置 DeepSeek 目录时，请重新选择 `deepseek-flash` 并检查旧模型 overrides，本插件不会自动改名。详见[0.2.0-rc.2 影响评估](docs/upstream-0.2.0-rc.2-assessment.zh-CN.md)。升级前请备份 profile 和旧设置。
 
 ### 步骤 1：安装插件
 
 **方式 A：通过 GitHub Release 离线包安装（推荐）**
 
-当前版本为 **0.1.6**，最低支持 **DSH 0.2.0-rc.2**。发布后可从 [Releases](https://github.com/Yurzi/dsh-web-search-enhanced/releases) 下载对应版本安装包及 SHA256 校验文件；也可执行 `pnpm install --frozen-lockfile && pnpm run check && pnpm pack` 自行构建。使用绝对路径安装：
+当前版本为 **0.1.7**，最低支持 **DSH 0.2.0-rc.2**。发布后可从 [Releases](https://github.com/Yurzi/dsh-web-search-enhanced/releases) 下载对应版本安装包及 SHA256 校验文件；也可执行 `pnpm install --frozen-lockfile && pnpm run check && pnpm pack` 自行构建。使用绝对路径安装：
 
 ```sh
-dsh plugin --profile web add /path/to/dsh-web-search-enhanced-0.1.6.tgz
+dsh plugin --profile web add /path/to/dsh-web-search-enhanced-0.1.7.tgz
 ```
 
 **方式 B：通过 npm 在线安装**
@@ -80,10 +80,10 @@ dsh plugin --profile web add /path/to/dsh-web-search-enhanced-0.1.6.tgz
 该版本发布到 npm 后，也可直接安装：
 
 ```sh
-dsh plugin --profile web add dsh-web-search-enhanced@0.1.6
+dsh plugin --profile web add dsh-web-search-enhanced@0.1.7
 ```
 
-已安装旧版时，DSH rc.2 不支持直接自动升级：先备份配置和存储，再通过插件管理器移除旧版并安装 0.1.6，核对 profile 补丁与会话选择。Desktop profile 需先启动过一次桌面端。完整步骤见[升级指南](docs/migration.zh-CN.md)。
+已安装旧版时，DSH rc.2 不支持直接自动升级：先备份配置和存储，再通过插件管理器移除旧版并安装 0.1.7，核对 profile 补丁与会话选择。Desktop profile 需先启动过一次桌面端。完整步骤见[升级指南](docs/migration.zh-CN.md)。
 
 ### 步骤 2：生效与刷新
 

@@ -1,3 +1,4 @@
+import { configVersion, CURRENT_CONFIG_VERSION } from './config-version.ts'
 import type { Freshness, StructuredAdapter } from './catalog.ts'
 import { CATALOG, SESSION_MODEL_ID, SESSION_MODEL_LABEL } from './catalog.ts'
 import type { SearchProtocol } from './protocols.ts'
@@ -12,7 +13,8 @@ export interface Connection {
   optionsByProtocol?: Partial<Record<SearchProtocol, Record<string, unknown>>>
 }
 export interface V2Config {
-  version?: 2
+  /** Persisted schema version; missing is accepted for historical sparse V2 settings. */
+  version?: typeof CURRENT_CONFIG_VERSION
   defaultConnection?: string
   freshness?: Freshness
   connections?: Record<string, Record<string, unknown>>
@@ -60,7 +62,7 @@ export function fixedBinding(value: unknown): FixedBinding {
 }
 /** Pure sparse merge. No credential lookup, writes, probing or implicit selection. */
 export function resolveSettings(config: V2Config = {}): ResolvedSettings {
-  if (config.version !== undefined && config.version !== 2) throw new Error('unsupported settings version')
+  if (configVersion(config) !== CURRENT_CONFIG_VERSION) throw new Error('settings migration required')
   const freshness = config.freshness ?? 'auto'
   if (!['auto', 'fresh', 'realtime'].includes(freshness)) throw new Error('invalid freshness')
   const connections: Record<string, Connection> = Object.create(null)
