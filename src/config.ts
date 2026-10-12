@@ -17,6 +17,8 @@ export interface V2Config {
   version?: typeof CURRENT_CONFIG_VERSION
   defaultConnection?: string
   freshness?: Freshness
+  /** Show the session search selector in the composer; /setup-search works either way. Default true. */
+  showSelector?: boolean
   connections?: Record<string, Record<string, unknown>>
 }
 export interface ResolvedSettings { freshness: Freshness; defaultConnection?: string; connections: Record<string, Connection> }
@@ -65,6 +67,7 @@ export function resolveSettings(config: V2Config = {}): ResolvedSettings {
   if (configVersion(config) !== CURRENT_CONFIG_VERSION) throw new Error('settings migration required')
   const freshness = config.freshness ?? 'auto'
   if (!['auto', 'fresh', 'realtime'].includes(freshness)) throw new Error('invalid freshness')
+  if (config.showSelector !== undefined && typeof config.showSelector !== 'boolean') throw new Error('showSelector must be boolean')
   const connections: Record<string, Connection> = Object.create(null)
   for (const [id, c] of Object.entries(CATALOG)) connections[id] = { id, kind: 'structured', label: c.label, disabled: false, adapter: c.adapter, endpoint: c.endpoint, credentialRef: c.credentialRef, keyless: 'keyless' in c && c.keyless === true, access: 'keyless' in c && c.keyless ? 'keyless' : 'api-key', options: {} }
   connections[SESSION_MODEL_ID] = { id: SESSION_MODEL_ID, kind: 'model', label: SESSION_MODEL_LABEL, disabled: false, binding: { mode: 'session' }, options: {} }

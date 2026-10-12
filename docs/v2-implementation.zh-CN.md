@@ -1,4 +1,4 @@
-# 0.1.6 开发与验证指南
+# 0.1.8 开发与验证指南
 
 本文件保留原路径以避免断链，内容改为可重复的开发、验证与交付方法。架构见[当前架构](design-v2.converged.zh-CN.md)，用户使用见[配置参考](configuration.zh-CN.md)，版本升级见[升级指南](migration.zh-CN.md)。测试存在、测试通过、供应商在线可用、运行实例完成部署是四种不同结论，不能互相替代。
 
@@ -6,7 +6,7 @@
 
 - Node.js：`^22.19.0 || >=24.0.0`；pnpm：按 packageManager 使用 `11.7.0`。
 - DSH：包要求 `>=0.2.0-rc.2`，源码以 0.2.0-rc.2 服务契约为基线。依赖声明与锁文件是构建依据，不修改宿主安装的依赖来让测试通过。
-- 当前开发主线为 `main`，旧版代码线为 `legacy/v0.0.x`。包版本 `0.1.6` 与 settings schema 的 `version: 2` 不同。
+- 当前开发主线为 `main`，旧版代码线为 `legacy/v0.0.x`。包版本 `0.1.8` 与 settings schema 的 `version: 2` 不同。
 
 在仓库根执行：
 
@@ -26,6 +26,7 @@ pnpm run check
 | `pnpm run build` | clean、声明 / TS 输出、服务端 ESM 与客户端 CJS bundle | 宿主已加载新 bundle |
 | `pnpm run verify:package` | 实际 pack 解包，必需产物及 patch 元数据 | npm 发布成功或线上安装成功 |
 | `node scripts/check-selector-ui.mjs` | 隔离 Chromium 中选择器交互和布局 | 运行中 DSH 会话 / Remote 的真实部署 |
+| `node scripts/check-composer-fit.mjs` | 隔离 Chromium 中按 DSH 输入栏结构的窄宽度降级（L2.5 / L3），桌面与 dsh-mobile 布局 | 真实 DSH 输入栏或其他插件组合的实际宽度 |
 | `node scripts/preview-ui.mjs` | 构建后生成设置组件静态 HTML | 交互、服务端或真实 GUI |
 
 verify-package 会临时打包并检查 `lib/index.js`、`lib/client.js`、`lib/types/index.d.ts`、`cordis.patch.yml`，随后删除临时包与解包目录。它内部优先 pnpm pack，失败才尝试 npm pack，不等于发布 registry。
@@ -58,6 +59,8 @@ node scripts/verify-package.mjs
 | [plugin.spec.ts](../tests/plugin.spec.ts)、[bundle.spec.ts](../tests/bundle.spec.ts)、[egress.spec.ts](../tests/egress.spec.ts) | 插件导出、bundle / patch 契约、fetchProvider 不受干扰、出站 transport |
 | [v2-client.spec.ts](../tests/v2-client.spec.ts) | 当前设置辅助逻辑、稀疏写入、凭据独立操作与多语言对齐 |
 | [settings-render.spec.ts](../tests/settings-render.spec.ts)、[selector-render.spec.ts](../tests/selector-render.spec.ts) | SSR 结构、折叠态、紧凑选择器、不可用项与状态 |
+| [crowded-row.spec.ts](../tests/crowded-row.spec.ts)、[selector-crowding.spec.ts](../tests/selector-crowding.spec.ts) | 拥挤输入栏让位：按渲染几何判断一行、等待宿主 compact、探测不残留属性、同宽反复的退避、固定显示状态、activity 不处理 |
+| [search-command.spec.ts](../tests/search-command.spec.ts)、[selector-display.spec.ts](../tests/selector-display.spec.ts) | `/setup-search` 选项与写入、跨视图刷新、`showSelector` 显示开关 |
 | [client-injection.spec.ts](../tests/client-injection.spec.ts) | Remote 命名空间注入顺序和生命周期 |
 
 修改某层时至少运行对应测试，并补负向用例。例如新增供应商不能只测成功响应，还需检查访问方式互斥、无付费回退、取消、限流、安全错误和设置冻结。修改 Remote 字段应一起更新服务端 schema、客户端调用与真实宿主测试，不能只让 SSR 通过。
@@ -71,12 +74,18 @@ CHROMIUM=/absolute/path/to/chromium node scripts/check-selector-ui.mjs
 # 仅在明确需要更新仓库预览资产时：
 node scripts/check-selector-ui.mjs --screenshots
 
+# 窄宽度降级与 dsh-mobile 布局（截图写到指定目录，不改仓库资产）：
+node scripts/check-composer-fit.mjs
+node scripts/check-composer-fit.mjs --screenshots .dsh-smoke-home/composer-fit
+
 # 先构建，再生成静态设置预览：
 node scripts/preview-ui.mjs
 node scripts/preview-ui.mjs --dark
 ```
 
 选择器脚本启动隔离 Chromium 和临时 profile，以模拟 Remote 运行组件；不连接或修改已有 DSH 会话。默认检查桌面、390px 窄屏、深色模式。`--screenshots` 会写预览图片，文档任务若未获资产修改范围不应使用。脚本使用本地 headless 浏览器参数，包括 `--no-sandbox`；仅在可信隔离开发环境运行。
+
+check-composer-fit 按 DSH `observeControlRow` 与 InputBar 样式搭建输入栏夹具，逐像素收窄 / 放宽，验证：可见选择器从不与换行同时出现、图标态为 28px 且无箭头、先 compact 再隐藏、隐藏 / 恢复各只切换一次且放得下即恢复、边界处无来回切换、错误 / 保存中 / 连接不可用时固定显示；再套用 dsh-mobile 0.6.4 工具栏样式重复收窄 / 放宽，验证手机页同样先让位、44px 触控尺寸与单行标签。夹具宽度不等于真实安装中其他插件的组合宽度。
 
 preview-ui 写 `.dsh-smoke-home/settings-preview.html`，不会启动第二个 DSH 服务。静态预览 / 截图仅供布局审阅，不能证明设置保存、服务端更新或用户机器的实际挂载。
 
@@ -101,7 +110,7 @@ preview-ui 写 `.dsh-smoke-home/settings-preview.html`，不会启动第二个 D
 
 1. 对最终待发提交运行 check 和所需浏览器 / 网络验证，记录版本与退出状态。
 2. 使用 `pnpm pack` 生成构建包；检查包版本、入口、声明、patch、README 与 docs 完整性。GitHub 自动 Source code archive 不是含 lib 的发行 tgz。
-3. 用户可用 `dsh plugin --profile web add /absolute/path/to/dsh-web-search-enhanced-0.1.6.tgz` 安装 Release 构建附件。
+3. 用户可用 `dsh plugin --profile web add /absolute/path/to/dsh-web-search-enhanced-0.1.8.tgz` 安装 Release 构建附件。
 4. Git 操作、远端分支调整、标签、Release 和 npm 发布分别需要授权与结果核验；不要把本地构建当作已发布。主线为 main，旧代码保留 legacy/v0.0.x，不需要把历史文档反复改成当前成功记录。
 5. 标签触发发布流程后，单独确认 workflow 和 npm registry 的版本 / 包内容，再宣称 npm 可安装。
 

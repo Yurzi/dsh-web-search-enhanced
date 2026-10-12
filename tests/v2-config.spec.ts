@@ -12,6 +12,11 @@ describe('V2 sparse catalog and request snapshots', () => {
     expect(r.defaultConnection).toBe('custom:deleted'); expect(r.connections['builtin:exa']?.credentialRef).toBe('EXA_API_KEY')
     expect(resolveSettings().connections['builtin:exa']?.label).toBe('Exa')
   })
+  it('accepts only a boolean composer selector switch', () => {
+    expect(() => resolveSettings({ showSelector: false })).not.toThrow()
+    expect(() => resolveSettings({ showSelector: true })).not.toThrow()
+    expect(() => resolveSettings({ showSelector: 'no' } as never)).toThrow('showSelector must be boolean')
+  })
   it('rejects secret, endpoint and adapter overrides on builtins', () => {
     for (const override of [{ apiKey: 'not-a-key' }, { endpoint: 'https://other.test' }, { adapter: 'tavily' }, { options: { contents: {} } }]) expect(() => resolveSettings({ connections: { 'builtin:exa': override } })).toThrow()
   })

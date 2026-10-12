@@ -18,7 +18,7 @@ export type ConfigValues = Omit<V2Config, 'version'> & { version?: number; apiKe
 export type Config = { [K in keyof ConfigValues]-?: Volatile<ConfigValues[K]> }
 /** Loader owns live references; SettingsForms projects these fields into the profile editor. */
 export const Config: z<ConfigValues, Config> = z.object({
-  version: z.number().volatile(), defaultConnection: z.string().volatile(), freshness: z.union(['auto', 'fresh', 'realtime'] as const).volatile(), connections: z.dict(z.any()).volatile(),
+  version: z.number().volatile(), defaultConnection: z.string().volatile(), freshness: z.union(['auto', 'fresh', 'realtime'] as const).volatile(), showSelector: z.boolean().volatile(), connections: z.dict(z.any()).volatile(),
   apiKey: z.string().role('secret').volatile(), modelMode: z.string().volatile(), protocol: z.string().volatile(), baseURL: z.string().volatile(), model: z.string().volatile(), fallbackModel: z.string().volatile(), apiKeyEnv: z.string().role('credential-ref').volatile(),
   apiVersion: z.string().volatile(), toolIdentifier: z.string().volatile(), maxTokens: z.number().volatile(), maxUses: z.number().volatile(), chatSearchMode: z.string().volatile(), searchContextSize: z.string().volatile(), providerId: z.string().volatile(),
 })

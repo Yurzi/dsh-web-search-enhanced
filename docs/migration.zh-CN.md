@@ -1,6 +1,6 @@
-# 升级到 0.1.7 / DSH 0.2.0-rc.2
+# 升级到 0.1.8 / DSH 0.2.0-rc.2
 
-0.1.7 沿用最低宿主版本 **0.2.0-rc.2**，沿用 0.1.3 已完成的 Loader 动态配置、profile-backed SettingsForms、ConfigForms 客户端、惰性 Typert codec 和新版 PTC 适配。从 0.1.3 / 0.1.4 / 0.1.5 / 0.1.6 的 V2 配置升级不需要新的配置或存储格式转换，本版增强旧配置迁移的版本识别和并发保护；详见 [0.2.0-rc.2 影响评估](upstream-0.2.0-rc.2-assessment.zh-CN.md)。旧版已采用的**会话级搜索连接**保持不变：包版本 0.1.7、设置格式 version 2、会话 Storage Domain version 1 是三个不同概念。完整参数见[配置参考](configuration.zh-CN.md)。
+0.1.8 沿用最低宿主版本 **0.2.0-rc.2**，沿用 0.1.3 已完成的 Loader 动态配置、profile-backed SettingsForms、ConfigForms 客户端、惰性 Typert codec 和新版 PTC 适配，以及 0.1.7 的配置版本识别与逐版本迁移。从 0.1.3 – 0.1.7 的 V2 配置升级不需要新的配置或存储格式转换；本版改进客户端选择器的窄宽度布局与 dsh-mobile 适配，新增 `/setup-search` 指令与可选的 `showSelector` 配置（缺省开启）；详见 [0.2.0-rc.2 影响评估](upstream-0.2.0-rc.2-assessment.zh-CN.md)。旧版已采用的**会话级搜索连接**保持不变：包版本 0.1.8、设置格式 version 2、会话 Storage Domain version 1 是三个不同概念。完整参数见[配置参考](configuration.zh-CN.md)。
 
 ## 1. 升级前准备
 
@@ -16,23 +16,23 @@ DSH rc.2 对已安装插件不支持直接自动升级。先完成备份、停�
 
 若跟随 pi-ai 内置 DeepSeek 目录，升级宿主后重新选择 `deepseek-flash`，检查旧 `deepseek-v4-flash` / `deepseek-v4-flash-vision-exp` 及其 overrides、默认模型和子代理设置。只针对这条目录路由，不机械替换私有端点的 ID；本插件不会改写用户模型配置。
 
-从当前源码运行 `pnpm install --frozen-lockfile && pnpm run check && pnpm pack`，或使用 [Releases](https://github.com/Yurzi/dsh-web-search-enhanced/releases) 中实际发布的 0.1.7 构建包。使用绝对路径交给 DSH 插件管理器：
+从当前源码运行 `pnpm install --frozen-lockfile && pnpm run check && pnpm pack`，或使用 [Releases](https://github.com/Yurzi/dsh-web-search-enhanced/releases) 中实际发布的 0.1.8 构建包。使用绝对路径交给 DSH 插件管理器：
 
 ```sh
-dsh plugin --profile web add /absolute/path/to/dsh-web-search-enhanced-0.1.7.tgz
+dsh plugin --profile web add /absolute/path/to/dsh-web-search-enhanced-0.1.8.tgz
 ```
 
 若该版本已在 npm 发布，也可安装固定版本：
 
 ```sh
-dsh plugin --profile web add dsh-web-search-enhanced@0.1.7
+dsh plugin --profile web add dsh-web-search-enhanced@0.1.8
 ```
 
 发布附件中的构建 tgz 与 GitHub 自动生成的 Source code archive 不同：后者是源码，不能假定含 `lib/` 构建产物。npm 可用性须以 registry 实际发布结果为准，GitHub 标签 / Release 存在不代表 npm 已完成。
 
 安装补丁选择 enhanced-search、禁用默认 web-search-deepseek，并明确将新会话默认设为 Exa；不改 fetchProvider。已有部署请审阅插件管理器反馈和 Web profile，避免重复注册条目，不要用整份示例覆盖所有宿主配置。
 
-本次未改变搜索业务契约和宿主依赖基线，但配置迁移逻辑与前后端构建产物已更新。重新加载插件或重启 DSH，**然后刷新 Web 页面**；只刷新浏览器不足以更新服务端。此操作可能影响运行中任务，应在合适时机进行。
+本次未改变搜索业务契约、配置迁移和宿主依赖基线，变化集中在客户端选择器的布局；安装新包后前后端构建产物均会更新。重新加载插件或重启 DSH，**然后刷新 Web 页面**；只刷新浏览器不足以更新服务端。此操作可能影响运行中任务，应在合适时机进行。
 
 ## 3. 启动时自动迁移旧配置
 
@@ -90,6 +90,7 @@ dsh plugin --profile web add dsh-web-search-enhanced@0.1.7
 4. 在设置中确认实际访问方式和凭据引用，不以 UI“已配置”替代真实授权测试。
 5. 仅在你允许外发查询 / 可能产生费用时，使用一个公开、非敏感词进行搜索，核对返回来源和错误类型；不要把私有文档发送给新供应商做测试。
 6. 验证 web_fetch 仍由预期 provider 处理，普通对话模型没有被搜索设置替换。
+7. 逐步拉窄窗口或侧栏：选择器先收成无箭头的图标，再放不下时暂时隐藏，输入栏控件不换行；放宽后自动恢复。出错、保存中或所选连接不可用时选择器保持显示。手机页（dsh-mobile）行为相同。在输入框输入 `/setup-search`，确认能切换当前会话的连接与实时性，且输入栏中的选择器随之更新。
 
 详细故障表见[配置参考](configuration.zh-CN.md)。发布前自动测试通过不等于你的实例已安装，也不保证当前出口 IP 的匿名访问可用。
 

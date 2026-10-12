@@ -1,4 +1,4 @@
-# 0.1.6 当前架构与实现边界
+# 0.1.8 当前架构与实现边界
 
 本文描述已存在的源码契约，不是未来设计提案或历史验收记录。为避免外部链接失效，保留原文件名。用户配置见[配置参考](configuration.zh-CN.md)，验证方法见[开发验证指南](v2-implementation.zh-CN.md)。
 
@@ -41,12 +41,14 @@ tools/execute 的 exec.agent → 私有 AsyncLocalStorage → enhanced-search
 | [src/remote-contract.ts](../src/remote-contract.ts) | 严格 Remote 请求 / 响应 schema 与调用描述符 |
 | [src/client/V2Settings.tsx](../src/client/V2Settings.tsx) | ConfigForm hooks 注入、当前连接设置界面和稀疏操作 |
 | [src/client/SearchConnectionSelector.tsx](../src/client/SearchConnectionSelector.tsx) | 当前会话连接与实时性选择器 |
+| [src/client/crowded-row.ts](../src/client/crowded-row.ts) | 输入栏拥挤时让出选择器位置的布局观察（L3） |
+| [src/client/search-command.ts](../src/client/search-command.ts) | `/setup-search` 指令：当前会话连接与实时性的弹出选择 |
 
 `model-config.ts`、`provider.ts` 的 `createProvider` / `EnhancedSearchProvider` 是兼容固定配置辅助接口；安装版始终走 V2 bridge。旧辅助代码中的环境变量或 fallback 行为不能外推为安装版配置能力。
 
 ## 3. 配置和秘密分离
 
-当前设置格式为 version 2，包版本为 0.1.6。内置目录只做默认值；用户保存差异，不把目录整表复制到用户层。四种结构化内置连接默认 keyless，访问方式为显式选择，不根据已保存 Key 猜测。自定义连接只允许支持的 adapter 或固定模型协议；新 endpoint 需要信任确认。
+当前设置格式为 version 2，包版本为 0.1.8。内置目录只做默认值；用户保存差异，不把目录整表复制到用户层。四种结构化内置连接默认 keyless，访问方式为显式选择，不根据已保存 Key 猜测。自定义连接只允许支持的 adapter 或固定模型协议；新 endpoint 需要信任确认。
 
 内置结构化连接不能重定向地址或改变 adapter。自定义结构化连接只能使用个人 Key；固定模型总是需要显式信任。校验拒绝任意 headers/body、缓存参数、秘密字段等不受支持的 options。禁用连接也参与配置校验。
 
@@ -112,8 +114,12 @@ Firecrawl 的 fresh/realtime 映射为内联 scrapeOptions.maxAge（86400000 / 0
 
 ## 9. 客户端与非目标
 
-设置使用官方 `plugins.bundle.config` 槽（key 为包名）和 ConfigForms / ConfigForm 路径操作，`whileServed` 管理宿主表单上下线；只向渲染器传递 hooks source 和绑定回调，不直接传入服务对象。`mutate` 返回 false 时保留草稿，不显示保存成功；凭据使用宿主 Remote。会话选择器用标准 `useProjection("modelSelection")` 订阅模型变更，移除 sessions unknown / binding 猜测；通过 `conversation.input.right` 追加槽，Remote 挂载后在独立注入作用域注册，不替换 composer / 模型槽，不抓取 DOM。
+设置使用官方 `plugins.bundle.config` 槽（key 为包名）和 ConfigForms / ConfigForm 路径操作，`whileServed` 管理宿主表单上下线；只向渲染器传递 hooks source 和绑定回调，不直接传入服务对象。`mutate` 返回 false 时保留草稿，不显示保存成功；凭据使用宿主 Remote。会话选择器用标准 `useProjection("modelSelection")` 订阅模型变更，移除 sessions unknown / binding 猜测；通过 `conversation.input.right` 追加槽，Remote 挂载后在独立注入作用域注册，不替换 composer / 模型槽，不读取输入内容。
 
 选择器只列本地可用连接并隐藏空组，但保留不可用的当前选择以供显式修复；使用原生 popover、键盘导航、Esc 与焦点恢复。主题使用宿主 `--dsw-alias-*` 令牌。空白会话首消息前没有独立选择器，靠默认连接初始化。
+
+窄宽度按级降级：先隐藏实时性，再随 DSH `data-model-compact` 只留图标；图标态去掉箭头，保持 28px 原生图标尺寸，状态标记改为角标（L2.5）。DSH 的输入栏在连图标都放不下时会让控件换行，dsh-mobile 也按设计分组换行；选择器在此之前让位（L3）：从稳定属性 `[data-composer-card]` 定位控制行，ResizeObserver 触发时检查行内已渲染按钮（排除弹层）是否同处一行，而不是按宽度相加——dsh-mobile 的伸展分组只报告填充后宽度。控制行尚未 compact 时先等宿主一帧。隐藏用 `hidden` 属性，宿主观察器据此重新测量；恢复前在同一同步任务内临时设置 `data-model-compact` 并取消隐藏，检查是否同处一行后立即撤销，不产生绘制。若刚恢复就在相同宽度再次换行，需再放宽 4px 才重试，防止来回切换。出错、保存中、面板打开或连接不可用时固定显示；activity 隐藏控件组时不处理。手机页沿用 dsh-mobile 0.6.3+ 的 flex 分组换行和 44px 触控尺寸，插件只限制按钮最大宽度并保持标签单行。
+
+`/setup-search` 通过可选注入的 `commandUi` 注册 popupSelect：选项与选择器面板一致（关闭、模型搜索、搜索服务；未关闭时追加实时性），经同一 SelectionClient 以观察到的 revision 写入，失败抛出让弹层显示错误；成功后 `announce` 通知同一会话的选择器从共享缓存重读。`showSelector: false` 时选择器条目渲染为空（加载中或设置不可用时仍显示），指令不受影响。
 
 本版本不修改 DSH 宿主、不新增任意 HTTP 路由、不维护用户自建密钥文件、不绕过上游限制、不保证匿名服务随时可用。隔离渲染和测试 harness 不等于运行中 GUI 已重新安装；发布 / 部署验证须另行执行并如实记录。

@@ -30,5 +30,11 @@ export function selectionInjection(client: SelectionClient, sessionId: string) {
   return {
     getSelection: (options?: SelectionReadOptions) => client.get(sessionId, options),
     setSelection: (request: Parameters<SelectionClient['set']>[1]) => client.set(sessionId, request),
+    watchSelection: (listener: () => void) => client.subscribe(id => { if (id === sessionId) listener() }),
   }
 }
+/** The composer seat follows the live plugin settings form (`showSelector`). */
+export function displayInjection<T>(form: ConfigForm<T>) {
+  return { hooks: { settings: form } }
+}
+export type DisplayFace<T> = InjectFace<ReturnType<typeof displayInjection<T>>>

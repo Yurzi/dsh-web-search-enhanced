@@ -39,7 +39,7 @@ export function sparseSettingOperations(snapshot: SparseSnapshot, path: string[]
 }
 export function resetSettingsOperations(snapshot: SparseSnapshot): SettingsPathOpView[] {
   if (configVersion({ ...object(snapshot.base), ...object(snapshot.user) }) !== CURRENT_CONFIG_VERSION) throw new Error('settings migration required')
-  return ['version', 'freshness', 'defaultConnection', 'connections'].filter(k => Object.hasOwn(object(snapshot.user), k)).map(k => ({ op: 'unset', path: [k] }))
+  return ['version', 'freshness', 'defaultConnection', 'showSelector', 'connections'].filter(k => Object.hasOwn(object(snapshot.user), k)).map(k => ({ op: 'unset', path: [k] }))
 }
 /** YAML is configuration only; consent is always supplied by the separate checkbox. */
 export function parseConnectionDraft(id: string, text: string, consent: boolean): Record<string, unknown> {
@@ -322,6 +322,22 @@ export function V2Settings({ useSettings, mutateSettings, describeCredentials, s
                   {Object.entries(freshnessLabels).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
                 </select>
                 <p className="v2s-hint">仅作为新会话初始值，已有会话可在输入区单独选择。优先新鲜：支持时使用不超过 24 小时的内容缓存；优先实时：重新获取页面。两者可能增加延迟和额度消耗；不支持的连接忽略此偏好。</p>
+              </div>
+              <div className="v2s-field">
+                <label className="v2s-checkbox-label">
+                  <input
+                    id={bodyId + '-show-selector'}
+                    type="checkbox"
+                    disabled={disabled}
+                    checked={config.showSelector !== false}
+                    onChange={e => {
+                      const show = e.target.checked
+                      void act(() => mutate(sparseSettingOperations(snapshot, ['showSelector'], show, true)), show ? '已在输入栏显示搜索连接选择器。' : '已隐藏输入栏中的搜索连接选择器，可用 /setup-search 切换当前会话。')
+                    }}
+                  />
+                  <span>在输入栏显示搜索连接选择器</span>
+                </label>
+                <p className="v2s-hint">关闭后输入栏不再显示选择器，搜索照常按会话选择执行；在输入框输入 /setup-search 可切换当前会话的连接与实时性。开启时，输入栏放不下也会自动让位。</p>
               </div>
             </div>
           </div>

@@ -111,13 +111,23 @@ describe('ConfigForm writes', () => {
     expect(renderer.root.findAllByProps({ className: 'v2s-badge v2s-badge-notice' })).toHaveLength(0)
   })
 
+  it('toggles the composer selector switch with sparse writes', async () => {
+    const mutate = vi.fn(async () => true)
+    const renderer = await mount(createElement(V2Settings, settingsProps(mutate)))
+    const toggle = () => renderer.root.findAllByProps({ type: 'checkbox' }).find(node => String(node.props.id).endsWith('-show-selector'))!
+    expect(toggle().props.checked).toBe(true)
+    await act(async () => { toggle().props.onChange({ target: { checked: false } }) })
+    expect(mutate).toHaveBeenLastCalledWith([{ op: 'set', path: ['showSelector'], value: false }], 8)
+    expect(JSON.stringify(renderer.toJSON())).toContain('/setup-search')
+  })
+
   it('retains a custom connection draft after refusal and closes it after acceptance', async () => {
     const mutate = vi.fn(async () => false)
     const renderer = await mount(createElement(V2Settings, settingsProps(mutate)))
     const button = (text: string) => renderer.root.findAllByType('button').find(node => node.children.join('') === text)!
     await act(async () => { button('+ 添加自定义结构化连接').props.onClick() })
     await act(async () => { renderer.root.findAllByType('input').find(node => String(node.props.id).endsWith('-conn-id'))!.props.onChange({ target: { value: 'custom:research' } }) })
-    await act(async () => { renderer.root.findByProps({ type: 'checkbox' }).props.onChange({ target: { checked: true } }) })
+    await act(async () => { renderer.root.findAllByProps({ type: 'checkbox' }).find(node => !String(node.props.id).endsWith('-show-selector'))!.props.onChange({ target: { checked: true } }) })
     const draft = renderer.root.findByType('textarea').props.value
     await act(async () => { button('保存连接').props.onClick() })
     expect(renderer.root.findByType('textarea').props.value).toBe(draft)

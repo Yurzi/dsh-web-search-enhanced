@@ -15,6 +15,7 @@ interface Entry {
 /** One instance per mounted Remote namespace, never a process-global/session-only cache. */
 export class SelectionClient {
   private entries = new Map<string, Entry>()
+  private listeners = new Set<(sessionId: string) => void>()
   private disposed = false
   private epoch = 0
   constructor(private remote: SearchConnectionRemote, private ttl = 30_000, private capacity = 64) {}
@@ -43,7 +44,16 @@ export class SelectionClient {
   }
   /** Transport loss/replacement must not reuse or replay work from the old Host. */
   reset() { ++this.epoch; this.entries.clear() }
-  dispose() { this.disposed = true; this.reset() }
+  dispose() { this.disposed = true; this.listeners.clear(); this.reset() }
+  /** Tell other views of a session to reread after a write they did not issue (e.g. /setup-search). */
+  announce(sessionId: string) {
+    if (this.disposed) return
+    for (const listener of [...this.listeners]) listener(sessionId)
+  }
+  subscribe(listener: (sessionId: string) => void): () => void {
+    this.listeners.add(listener)
+    return () => { this.listeners.delete(listener) }
+  }
 
   get(sessionId: string, options: SelectionReadOptions = {}): Promise<Result> {
     const entry = this.entry(sessionId)

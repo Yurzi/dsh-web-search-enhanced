@@ -4,12 +4,14 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+import type {} from '@deepseek-ai/dsh-client-ui-commands/client'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-api-remotes/client'
 import type { Context } from '@deepseek-ai/cordis'
 import type { V2Config } from '../config.ts'
 import { V2Settings } from './V2Settings.tsx'
 import { SearchConnectionSelector, type SearchConnectionRemote } from './SearchConnectionSelector.tsx'
-import { selectionInjection, settingsInjection } from './bindings.ts'
+import { displayInjection, selectionInjection, settingsInjection } from './bindings.ts'
+import { searchCommand } from './search-command.ts'
 import { SelectionClient } from './selection-client.ts'
 import { searchContribution } from '../remote-contract.ts'
 import { en, zh, type LocaleKey } from './locales.ts'
@@ -46,7 +48,12 @@ export async function apply(ctx: Context): Promise<void> {
     searchCtx.effect(() => connection.generation.subscribe(() => client.reset()), 'search connection invalidation')
     searchCtx.slots.inject('conversation.input.right', () => searchCtx.slots.register({
       name: 'conversation.input.right', id: 'search-connection', order: 20, locale: LOCALE,
-      inject: sessionId => selectionInjection(client, sessionId),
+      inject: sessionId => ({ ...selectionInjection(client, sessionId), ...displayInjection(form) }),
     }, SearchConnectionSelector))
+    // Optional: the selector keeps working on hosts without the command UI.
+    searchCtx.inject(['commandUi'], commandCtx => {
+      const text = (key: LocaleKey) => ctx.locale.resolveText({ en: en[key], zh: zh[key] })
+      commandCtx.effect(() => commandCtx.commandUi.register(searchCommand(client, text)), 'search setup command')
+    })
   })
 }

@@ -1,11 +1,22 @@
+/**
+ * L2.5: once the label is hidden, drop the chevron and keep a native 28px icon
+ * seat; transient status marks become corner badges instead of widening it.
+ */
+const iconOnly = (scope: string) => `${scope}.v2s-search-label,${scope}.v2s-search-mode,${scope}.v2s-search-chevron { display:none; }
+${scope}.v2s-search-trigger { justify-content:center; gap:0; width:28px; padding:0; }
+${scope}.v2s-search-check,${scope}.v2s-search-error-dot { position:absolute; top:1px; right:1px; font-size:10px; line-height:10px; pointer-events:none; }`
+
 export const selectorCss = `
 /* Match DSH ModelSelect trigger/menu metrics and semantic theme tokens. */
 .v2s-selector { display:inline-flex; align-items:center; flex:none; min-width:0; font:inherit; }
-.v2s-search-trigger { display:flex; align-items:center; gap:4px; min-width:0; max-width:220px; max-width:min(360px,45cqw); height:28px; padding:0 4px 0 8px; border:none; border-radius:24px; outline:none; background:transparent; color:var(--dsw-alias-label-secondary); font:inherit; font-size:13px; font-weight:500; line-height:20px; cursor:pointer; white-space:nowrap; }
+/* L3: the crowded-row observer yields this seat before DSH's control row wraps. */
+.v2s-selector[hidden] { display:none; }
+.v2s-search-trigger { position:relative; display:flex; align-items:center; gap:4px; min-width:0; max-width:220px; max-width:min(360px,45cqw); height:28px; padding:0 4px 0 8px; border:none; border-radius:24px; outline:none; background:transparent; color:var(--dsw-alias-label-secondary); font:inherit; font-size:13px; font-weight:500; line-height:20px; cursor:pointer; white-space:nowrap; }
 .v2s-search-trigger:hover,.v2s-search-trigger[aria-expanded=true] { background:var(--dsw-alias-interactive-bg-hover); }
 .v2s-search-trigger:focus-visible { box-shadow:0 0 0 2px var(--dsw-alias-border-l3); }
 .v2s-search-trigger svg { flex:none; }
-.v2s-search-label,.v2s-search-mode { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+/* Text stays on one line even when a host layout re-enables wrapping on buttons. */
+.v2s-search-label,.v2s-search-mode { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .v2s-search-mode { flex-shrink:1000; color:var(--dsw-alias-label-caption); }
 .v2s-search-chevron { color:var(--dsw-alias-label-caption); transition:transform .12s; }
 .v2s-search-trigger[aria-expanded=true] .v2s-search-chevron { transform:rotate(180deg); }
@@ -16,17 +27,19 @@ export const selectorCss = `
 @media(prefers-reduced-motion:reduce) { .v2s-search-busy { animation:none; } .v2s-search-chevron { transition:none; } }
 /* Match DSH conversation.input.model content-driven collapse via row variables on desktop. */
 .v2s-search-label,.v2s-search-mode { display:var(--dsh-composer-model-text-display,block); }
-:where([data-model-compact]) .v2s-search-label,:where([data-model-compact]) .v2s-search-mode { display:none; }
+${iconOnly(':where([data-model-compact]) ')}
 /* Responsive auto-scaling for narrow containers and mobile viewports. */
 @container(width<=420px) { .v2s-search-mode { display:none; } }
-@container(width<=360px) { .v2s-search-label { display:none; } }
+@container(width<=360px) { ${iconOnly('')} }
 @media (max-width:420px) { .v2s-search-mode { display:none; } }
-@media (max-width:360px) { .v2s-search-label { display:none; } }
-/* Auto-scaling adaptation under dsh-mobile grid layout. */
-:where([data-dsh-mobile-composer-row]) .v2s-selector,:where([data-dsh-mobile-composer-trailing]) .v2s-selector { flex:0 1 auto; min-width:0; max-width:min(100%,180px); }
-:where([data-dsh-mobile-composer-row]) .v2s-search-trigger,:where([data-dsh-mobile-composer-trailing]) .v2s-search-trigger { min-width:0; max-width:100%; }
-:where([data-dsh-mobile-composer-row]) .v2s-search-mode,:where([data-dsh-mobile-composer-trailing]) .v2s-search-mode { display:none; }
-:where([data-dsh-mobile-composer-row]) .v2s-search-label,:where([data-dsh-mobile-composer-trailing]) .v2s-search-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+@media (max-width:360px) { ${iconOnly('')} }
+/* dsh-mobile >=0.6.3 keeps DSH's flex groups: controls wrap inside
+   [data-dsh-mobile-composer-controls], and it owns touch-target sizing and the
+   wrapper's min/max width. Only cap the trigger; L3 still yields the seat
+   before the row wraps, with /setup-search as the entry point. */
+:where([data-dsh-mobile-composer-row]) .v2s-selector { flex:0 1 auto; }
+:where([data-dsh-mobile-composer-row]) .v2s-search-trigger { max-width:min(100%,180px); }
+:where([data-dsh-mobile-composer-row]) .v2s-search-mode { display:none; }
 .v2s-search-sr { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0; }
 .v2s-selector-panel { position:fixed; inset:auto; margin:0; box-sizing:border-box; max-width:calc(100vw - 32px); padding:3px; overflow:auto; overscroll-behavior:contain; border:0; border-radius:16px; background:var(--dsw-specific-menu); backdrop-filter:var(--dsw-menu-backdrop-filter); color:var(--dsw-alias-label-primary); --dsw-elevation-stroke-color:var(--dsw-alias-border-l1); box-shadow:var(--dsw-elevation-prominent); --dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2); --dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2); font-family:inherit; font-size:13px; line-height:20px; }
 .v2s-selector-panel:not(:popover-open) { display:none; }

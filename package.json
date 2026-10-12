@@ -1,6 +1,6 @@
 {
   "name": "dsh-web-search-enhanced",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Session-scoped search connections for DeepSeek Harness",
   "license": "MIT",
   "type": "module",

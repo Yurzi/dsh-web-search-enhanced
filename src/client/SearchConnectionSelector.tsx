@@ -1,12 +1,18 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/types'
-import type { SearchLocaleProps, selectionInjection } from './bindings.ts'
+import type { ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { DisplayFace, SearchLocaleProps, selectionInjection } from './bindings.ts'
 import { SESSION_MODEL_ID, SESSION_MODEL_LABEL, type Freshness } from '../catalog.ts'
+import type { V2Config } from '../config.ts'
 import { selectorCss } from './search-selector.css.ts'
+import { observeCrowdedRow, type CrowdedRowHandle } from './crowded-row.ts'
+
+/** Collapse decisions must land before paint; server rendering has no layout to observe. */
+const useLayoutSafeEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect
 
 export interface SearchConnectionView {
   id: string; label: string; kind: 'model' | 'structured'; configured: boolean
@@ -21,7 +27,9 @@ export interface SearchConnectionRemote {
   get(request: { sessionId: string }): Promise<RemoteResult<SearchSelectionResponse>>
   set(request: { sessionId: string; connectionId?: string | null; freshness?: Freshness; expectedRevision: number }): Promise<RemoteResult<SearchSelectionResponse>>
 }
-export type SearchConnectionSelectorProps = PropsRuntime<'conversation.input.right'> & ReturnType<typeof selectionInjection> & SearchLocaleProps
+export type SearchConnectionSelectorProps = PropsRuntime<'conversation.input.right'> & ReturnType<typeof selectionInjection> & SearchLocaleProps & Partial<DisplayFace<V2Config>>
+/** Only an accepted `showSelector: false` hides the seat; loading or unavailable settings keep it. */
+export const selectorDisabled = (snapshot: ConfigFormSnapshot<V2Config>) => snapshot.status === 'ready' && snapshot.value?.showSelector === false
 
 /** Each effect owns a guard: cancellation also fences responses across sessions/unmount. */
 export function createResponseGuard() {
@@ -41,18 +49,21 @@ export function discoverableConnections(connections: SearchConnectionView[]): Se
 export const freshnessLabels: Record<Freshness, string> = { auto: '自动', fresh: '优先新鲜', realtime: '优先实时' }
 
 export function SearchConnectionSelector(props: SearchConnectionSelectorProps) {
+  // The hook source is bound for the slot's lifetime, so this call is unconditional per instance.
+  const disabled = props.useSettings?.(selectorDisabled) ?? false
+  if (disabled) return null
   // A new session must never briefly display or write the previous session's selection.
   return <SessionSelector key={props.sessionId} {...props} />
 }
-function SessionSelector({ sessionId, getSelection, setSelection, useProjection, t }: SearchConnectionSelectorProps) {
+function SessionSelector({ sessionId, getSelection, setSelection, watchSelection, useProjection, t }: SearchConnectionSelectorProps) {
   const modelSelection = useProjection('modelSelection')
   // Projection snapshots and injected callbacks can be recreated on unrelated renders.
   const modelKey = JSON.stringify(modelSelection ? [
     modelSelection.lastUsed?.provider, modelSelection.lastUsed?.model, modelSelection.lastUsed?.reasoningEffort,
     modelSelection.next?.provider, modelSelection.next?.model, modelSelection.next?.reasoningEffort,
   ] : null)
-  const latest = useRef({ getSelection, setSelection, t, modelKey })
-  latest.current = { getSelection, setSelection, t, modelKey }
+  const latest = useRef({ getSelection, setSelection, watchSelection, t, modelKey })
+  latest.current = { getSelection, setSelection, watchSelection, t, modelKey }
   const [value, setValue] = useState<SearchSelectionResponse>()
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -103,8 +114,11 @@ function SessionSelector({ sessionId, getSelection, setSelection, useProjection,
     const focus = () => { if (document.visibilityState === 'visible') void refresh() }
     window.addEventListener('focus', focus)
     document.addEventListener('visibilitychange', focus)
+    // Writes from /setup-search land in the shared cache; reread it rather than waiting for focus.
+    const unwatch = latest.current.watchSelection?.(() => { void refresh() })
     return () => {
       reads.cancel(); writes.cancel(); controller.current = undefined
+      unwatch?.()
       window.removeEventListener('focus', focus)
       document.removeEventListener('visibilitychange', focus)
     }
@@ -140,12 +154,27 @@ export interface SearchSelectorControlProps extends SearchLocaleProps {
 /** Native popovers live in the top layer, outside the composer's clipping boundary. */
 export function SearchSelectorControl({ t, value, connections, pending, error, notice, onSelect, onFreshness, onOpen, onRefresh }: SearchSelectorControlProps) {
   const id = useId()
+  const root = useRef<HTMLDivElement>(null)
   const panel = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
   const selected = value?.selection.connectionId
   const current = connections.find(c => c.id === selected)
   const label = !value ? t('search') : selected === null ? t('searchOff') : current?.id === SESSION_MODEL_ID ? t('followModel') : current?.label ?? (selected ? t('connectionUnavailable') : t('selectSearch'))
+  // A crowded row may hide the selector only while its state needs no attention:
+  // errors, saving, an open panel, or a missing/unusable connection stay visible.
+  const pinned = Boolean(error) || pending || open || (value !== undefined && selected !== null && current?.configured !== true)
+  const pinnedRef = useRef(pinned)
+  pinnedRef.current = pinned
+  const crowded = useRef<CrowdedRowHandle>()
+  useLayoutSafeEffect(() => {
+    const node = root.current
+    if (!node) return
+    const handle = observeCrowdedRow(node, { pinned: () => pinnedRef.current })
+    crowded.current = handle
+    return () => { crowded.current = undefined; handle.dispose() }
+  }, [])
+  useLayoutSafeEffect(() => { crowded.current?.refresh() }, [pinned])
   useEffect(() => {
     const node = panel.current
     if (!node) return
@@ -171,7 +200,7 @@ export function SearchSelectorControl({ t, value, connections, pending, error, n
     node.showPopover()
     ;(node.querySelector<HTMLButtonElement>('button[aria-pressed="true"]:not(:disabled)') ?? node.querySelector<HTMLButtonElement>('button:not(:disabled)'))?.focus()
   }
-  return <div className="v2s-selector">
+  return <div ref={root} className="v2s-selector">
     <style>{selectorCss}</style>
     <button ref={trigger} type="button" className="v2s-search-trigger" aria-label={t('searchConnection') + label}
       aria-haspopup="dialog" aria-expanded={open} aria-controls={id}

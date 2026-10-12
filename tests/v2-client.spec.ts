@@ -10,6 +10,10 @@ describe('V2 sparse settings helpers', () => {
     expect(sparseSettingOperations({}, ['freshness'], 'auto', 'auto')).toEqual([])
     expect(sparseSettingOperations({}, ['defaultConnection'], undefined)).toEqual([])
     expect(resetSettingsOperations({})).toEqual([])
+    expect(resetSettingsOperations({ user: { version: 2, showSelector: false } })).toEqual([{ op: 'unset', path: ['version'] }, { op: 'unset', path: ['showSelector'] }])
+    expect(sparseSettingOperations({}, ['showSelector'], true, true)).toEqual([])
+    expect(sparseSettingOperations({ user: { version: 2 } }, ['showSelector'], false, true)).toEqual([{ op: 'set', path: ['showSelector'], value: false }])
+    expect(sparseSettingOperations({ user: { version: 2, showSelector: false } }, ['showSelector'], true, true)).toEqual([{ op: 'unset', path: ['showSelector'] }])
   })
   it('refuses to overwrite or reset future and unmigrated versions', () => {
     for (const version of [1, 3]) {

@@ -77,4 +77,25 @@ describe('compact native-style search picker',()=>{
     expect(selectorCss).toContain('data-dsh-mobile-composer-row')
     expect(selectorCss).toContain('.v2s-search-mode { flex-shrink:1000;')
   })
+  it('collapses an icon-only trigger to a 28px seat without the chevron (L2.5)',()=>{
+    for (const scope of [':where([data-model-compact]) ', '']) {
+      expect(selectorCss).toContain(`${scope}.v2s-search-label,${scope}.v2s-search-mode,${scope}.v2s-search-chevron { display:none; }`)
+      expect(selectorCss).toContain(`${scope}.v2s-search-trigger { justify-content:center; gap:0; width:28px; padding:0; }`)
+    }
+    expect(selectorCss).toMatch(/@container\(width<=360px\) \{ \.v2s-search-label,\.v2s-search-mode,\.v2s-search-chevron \{ display:none; \}/)
+    expect(selectorCss).toMatch(/@media \(max-width:360px\) \{ \.v2s-search-label,\.v2s-search-mode,\.v2s-search-chevron \{ display:none; \}/)
+    // Status marks become corner badges, so feedback never widens the compact seat.
+    expect(selectorCss).toContain('.v2s-search-check,.v2s-search-error-dot { position:absolute;')
+    expect(selectorCss).toContain('.v2s-search-trigger { position:relative;')
+    expect(selectorCss).toContain('.v2s-selector[hidden] { display:none; }')
+  })
+  it('follows the dsh-mobile flex toolbar instead of the retired grid layout',()=>{
+    expect(selectorCss).not.toContain('data-dsh-mobile-composer-trailing')
+    expect(selectorCss).not.toMatch(/data-dsh-mobile-composer-row\]\) \.v2s-selector \{[^}]*min-width:0/)
+    // /setup-search keeps the selection reachable, so L3 may hide the seat on the mobile page too.
+    expect(selectorCss).not.toMatch(/data-dsh-mobile-composer-row\]\) \.v2s-selector\[hidden\]/)
+    expect(selectorCss).toContain(':where([data-dsh-mobile-composer-row]) .v2s-search-trigger { max-width:min(100%,180px); }')
+    // dsh-mobile re-enables white-space on toolbar buttons; labels must still ellipsize on one line.
+    expect(selectorCss).toContain('.v2s-search-label,.v2s-search-mode { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }')
+  })
 })

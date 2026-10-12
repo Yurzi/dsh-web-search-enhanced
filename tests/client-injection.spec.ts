@@ -76,7 +76,8 @@ it('mounts before injecting, binds callbacks to the Session, and follows namespa
   await vi.waitFor(() => expect(h.entries.has('conversation.input.right')).toBe(true))
   const selector = h.entries.get('conversation.input.right')
   const props = selector.inject('current-session')
-  expect(Object.keys(props).sort()).toEqual(['getSelection', 'setSelection'])
+  expect(Object.keys(props).sort()).toEqual(['getSelection', 'hooks', 'setSelection', 'watchSelection'])
+  expect(props.hooks).toEqual({ settings: h.form })
   await props.getSelection()
   await props.setSelection({ connectionId: 'builtin:exa', expectedRevision: 4 })
   expect(h.search.get).toHaveBeenCalledWith({ sessionId: 'current-session' })
@@ -93,6 +94,23 @@ it('mounts before injecting, binds callbacks to the Session, and follows namespa
   await plugin.dispose()
   expect(h.entries.size).toBe(0)
   expect(h.registerLocale.mock.results[0]!.value).toHaveBeenCalledOnce()
+})
+
+it('registers /setup-search only while commandUi and the search namespace are available', async () => {
+  const h = await fixture()
+  const unregister = vi.fn()
+  const register = vi.fn(() => unregister)
+  h.ctx.provide('commandUi', { register })
+  ;(h.ctx as any).locale.resolveText = (text: { en: string; zh: string }) => text.zh
+  const plugin = h.ctx.plugin(client)
+  await plugin
+  await vi.waitFor(() => expect(register).toHaveBeenCalledTimes(1))
+  const command = (register.mock.calls[0] as unknown as [{ name: string; label(): string }])[0]
+  expect(command.name).toBe('setup-search')
+  expect(command.label()).toBe('搜索设置')
+  await h.unmount()
+  await vi.waitFor(() => expect(unregister).toHaveBeenCalledTimes(1))
+  await plugin.dispose()
 })
 
 it('shares session reads and invalidates on settings, credential and carrier changes', async () => {

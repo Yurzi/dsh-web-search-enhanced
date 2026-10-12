@@ -63,16 +63,16 @@
 - **DeepSeek Harness**：≥ `0.2.0-rc.2`
 - **Node.js**：`^22.19.0 || >=24.0.0`
 
-本版沿用 DSH 0.2.0-rc.2 基线，完善配置版本判定与逐版本自动迁移；现有 V2 配置和会话存储格式不变，显式 V1 与无版本旧模型配置可自动升级。详见[配置版本设计](docs/config-versioning.zh-CN.md)。跟随模型仍要求 API Key；使用 pi-ai 内置 DeepSeek 目录时，请重新选择 `deepseek-flash` 并检查旧模型 overrides，本插件不会自动改名。详见[0.2.0-rc.2 影响评估](docs/upstream-0.2.0-rc.2-assessment.zh-CN.md)。升级前请备份 profile 和旧设置。
+本版沿用 DSH 0.2.0-rc.2 基线，改进窄输入栏中的会话搜索选择器：空间不足时先收成 28px 图标，仍放不下时暂时让位，避免输入栏控件被挤到第二行（含 dsh-mobile 0.6.3+ 手机页）；新增 `/setup-search` 指令和“在输入栏显示搜索连接选择器”开关。配置格式、会话存储和搜索行为均不变（配置版本机制见[配置版本设计](docs/config-versioning.zh-CN.md)）。跟随模型仍要求 API Key；使用 pi-ai 内置 DeepSeek 目录时，请重新选择 `deepseek-flash` 并检查旧模型 overrides，本插件不会自动改名。详见[0.2.0-rc.2 影响评估](docs/upstream-0.2.0-rc.2-assessment.zh-CN.md)。升级前请备份 profile 和旧设置。
 
 ### 步骤 1：安装插件
 
 **方式 A：通过 GitHub Release 离线包安装（推荐）**
 
-当前版本为 **0.1.7**，最低支持 **DSH 0.2.0-rc.2**。发布后可从 [Releases](https://github.com/Yurzi/dsh-web-search-enhanced/releases) 下载对应版本安装包及 SHA256 校验文件；也可执行 `pnpm install --frozen-lockfile && pnpm run check && pnpm pack` 自行构建。使用绝对路径安装：
+当前版本为 **0.1.8**，最低支持 **DSH 0.2.0-rc.2**。发布后可从 [Releases](https://github.com/Yurzi/dsh-web-search-enhanced/releases) 下载对应版本安装包及 SHA256 校验文件；也可执行 `pnpm install --frozen-lockfile && pnpm run check && pnpm pack` 自行构建。使用绝对路径安装：
 
 ```sh
-dsh plugin --profile web add /path/to/dsh-web-search-enhanced-0.1.7.tgz
+dsh plugin --profile web add /path/to/dsh-web-search-enhanced-0.1.8.tgz
 ```
 
 **方式 B：通过 npm 在线安装**
@@ -80,10 +80,10 @@ dsh plugin --profile web add /path/to/dsh-web-search-enhanced-0.1.7.tgz
 该版本发布到 npm 后，也可直接安装：
 
 ```sh
-dsh plugin --profile web add dsh-web-search-enhanced@0.1.7
+dsh plugin --profile web add dsh-web-search-enhanced@0.1.8
 ```
 
-已安装旧版时，DSH rc.2 不支持直接自动升级：先备份配置和存储，再通过插件管理器移除旧版并安装 0.1.7，核对 profile 补丁与会话选择。Desktop profile 需先启动过一次桌面端。完整步骤见[升级指南](docs/migration.zh-CN.md)。
+已安装旧版时，DSH rc.2 不支持直接自动升级：先备份配置和存储，再通过插件管理器移除旧版并安装 0.1.8，核对 profile 补丁与会话选择。Desktop profile 需先启动过一次桌面端。完整步骤见[升级指南](docs/migration.zh-CN.md)。
 
 ### 步骤 2：生效与刷新
 
@@ -158,7 +158,7 @@ _注：实时抓取可能会稍微增加检索耗时与额度消耗；对于不�
 <summary><b>Q1: 搜索时提示 <code>WEB_SEARCH_NOT_SELECTED</code>？</b></summary>
 
 **原因**：当前会话没有选定任何搜索连接。  
-**解决办法**：在输入框右侧工具栏点击搜索图标/胶囊，在弹出的菜单中勾选任意一个搜索服务（如 Exa 或 Firecrawl）；或者在插件设置中为“新会话默认连接”指定一个默认引擎。
+**解决办法**：在输入框右侧工具栏点击搜索图标/胶囊（或在输入框输入 `/setup-search`），在弹出的菜单中勾选任意一个搜索服务（如 Exa 或 Firecrawl）；或者在插件设置中为“新会话默认连接”指定一个默认引擎。
 </details>
 
 <details>
@@ -190,7 +190,14 @@ _注：实时抓取可能会稍微增加检索耗时与额度消耗；对于不�
 </details>
 
 <details>
-<summary><b>Q5: 如何从 0.0.x 旧版本平滑升级？</b></summary>
+<summary><b>Q5: 窗口很窄时，输入框里的搜索图标不见了？</b></summary>
+
+**原因**：输入栏放不下所有控件时，插件会先把选择器收成图标；连图标也放不下时，为避免控件被挤到第二行，选择器会暂时隐藏（桌面与手机页相同）。若在设置中关闭了“在输入栏显示搜索连接选择器”（`showSelector: false`），选择器始终不显示。当前会话的搜索设置不受影响，照常生效。  
+**解决办法**：在输入框输入 `/setup-search`，即可切换当前会话的搜索连接与实时性；把窗口或侧栏拉宽一点，图标也会自动回来。出错、正在保存或所选连接不可用时，选择器始终显示。
+</details>
+
+<details>
+<summary><b>Q6: 如何从 0.0.x 旧版本平滑升级？</b></summary>
 
 升级后重新加载插件或重启 DSH，插件会在启动时自动检测并迁移旧版全局模型配置；迁移成功后映射为新版连接配置。若出现迁移错误，请检查宿主日志、DSH Credentials 权限和旧配置，再重启插件。详细注意事项请参阅 📖 [升级指南](docs/migration.zh-CN.md)。
 </details>
