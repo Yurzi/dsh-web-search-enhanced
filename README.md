@@ -50,13 +50,13 @@ dsh-web-search-enhanced 是 [DeepSeek Harness (DSH)](https://github.com/deepseek
 从 npm 安装：
 
 ```sh
-dsh plugin --profile web add dsh-web-search-enhanced@0.1.9
+dsh plugin --profile web add dsh-web-search-enhanced@0.1.10
 ```
 
 或安装本地构建的包（例如用 `pnpm pack` 生成），路径需为绝对路径：
 
 ```sh
-dsh plugin --profile web add /absolute/path/to/dsh-web-search-enhanced-0.1.9.tgz
+dsh plugin --profile web add /absolute/path/to/dsh-web-search-enhanced-0.1.10.tgz
 ```
 
 也可以在 Web 界面的 **插件** 页安装第三方插件时填入包名 `dsh-web-search-enhanced`。安装后刷新 Web 页面。
@@ -124,11 +124,17 @@ DSH 0.2.1 起，凭据存储中的值优先于环境变量。如果你习惯用�
 
 输入栏空间不足时，按钮先隐藏实时性，再隐藏连接名，最后只保留地球图标，点开后的菜单不变。也可以随时用 `/setup-search` 切换。按钮只有在设置中关闭「在输入框显示搜索按钮」时才会完全隐藏。
 
-### 内置的“网页搜索”设置页不见了，搜索报 WEB_PROVIDER_CONFIGURED_MISSING
+### 能和 dsh-web-fetch-enhanced 一起安装吗？
 
-本插件的安装补丁停用了 DSH 自带的 `web-search-deepseek` 和 `web-deepseek-api`，所以 **插件 → 内置插件配置 → 网页搜索** 页面不再显示。DeepSeek 搜索可以改用本插件的 DeepSeek 连接。
+可以，两种安装顺序都行。两个插件各自占用 DSH 原生 provider 的 ID（本插件是搜索的 `deepseek-official`，dsh-web-fetch-enhanced 是抓取的 `http`），只停用被替换的原生条目，都不改动共享的 `web` 条目。用 `dsh --profile web --dump-config` 检查时，`web` 条目应保持 `searchProvider: deepseek-official` 和 `fetchProvider: http`。
 
-如果以前在那个页面打开或关闭过「启用新版 Web 搜索 API」，用户配置的 `web` 条目中会残留 `searchProvider` / `fetchProvider`，指向已停用的 provider，于是搜索或抓取报 `WEB_PROVIDER_CONFIGURED_MISSING`。用 `dsh --profile web --dump-config` 查看 `web` 条目，删除用户层中的这两个字段即可。
+### 内置的“网页搜索”设置页不见了，或搜索没有使用所选连接
+
+本插件替换了 DSH 自带的 DeepSeek 搜索（`web-search-deepseek`），所以 **插件 → 内置插件配置 → 网页搜索** 页面不再显示。DeepSeek 搜索可以改用本插件的 DeepSeek 连接；确实要保留原生搜索时，见[配置参考的共存说明](docs/configuration.md#provider-id-与原生搜索共存)。
+
+`web_search` 没有经过本插件时，插件设置页顶部会提示原因和改法。
+
+如果以前在那个页面打开过「启用新版 Web 搜索 API」，用户配置的 `web` 条目中会残留 `searchProvider: deepseek-search-api` 和 `fetchProvider: deepseek-fetch-api`：搜索和抓取都由 DeepSeek Search / Fetch API 完成，本插件和抓取插件都不参与，输入框中选择的连接不生效。用 `dsh --profile web --dump-config` 查看 `web` 条目，删除用户层中的这两个字段即可。
 
 ### 跟随会话模型报 WEB_SEARCH_FOLLOW_UNSUPPORTED
 
@@ -139,7 +145,7 @@ DSH 0.2.1 起，凭据存储中的值优先于环境变量。如果你习惯用�
 | 文档 | 内容 |
 | --- | --- |
 | [配置参考](docs/configuration.md) | 所有字段、内置连接、参数白名单、自定义连接、跟随模型规则、错误码 |
-| [升级指南](docs/upgrading.md) | 版本对应关系、升级到 0.1.9 的变化、旧配置迁移、回退 |
+| [升级指南](docs/upgrading.md) | 版本对应关系、升级到 0.1.10 的变化、旧配置迁移、回退 |
 | [架构](docs/architecture.md) | 模块划分、请求流程、如何新增搜索服务 |
 | [开发](docs/development.md) | 本地开发、测试、在真实 DSH 中验证、发布 |
 | [更新日志](CHANGELOG.md) | 各版本的变化 |

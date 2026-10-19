@@ -5,14 +5,17 @@ import type {} from '@deepseek-ai/dsh-api-session-controller'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { z } from 'zod'
-import { selectionChange, selectionRequest, type SelectionChange, type SelectionRequest, type SelectionView } from '../remote-contract.ts'
+import {
+  providerRequest, selectionChange, selectionRequest,
+  type ProviderRequest, type ProviderView, type SelectionChange, type SelectionRequest, type SelectionView,
+} from '../remote-contract.ts'
 import { SelectionConflict, type SearchSessions, type Selection } from './selections.ts'
 
-/** Both methods read or write exactly the addressed Session, so session access control applies. */
+/** `get` and `set` read or write exactly the addressed Session, so session access control applies. */
 const addressedSession = (request: { readonly sessionId: string }) => request.sessionId as SessionId
 
 export class SearchConnectionsService extends TypertRemoteService {
-  constructor(ctx: Context, private readonly sessions: SearchSessions) {
+  constructor(ctx: Context, private readonly sessions: SearchSessions, private readonly providerId: string) {
     super(ctx, 'searchConnections')
   }
 
@@ -43,6 +46,14 @@ export class SearchConnectionsService extends TypertRemoteService {
     return this.view(agent, selection)
   }
 
+  /** No session is involved: the settings page compares these facts with the `web` row it observes. */
+  @Remote
+  async provider(request: ProviderRequest): Promise<ProviderView> {
+    parse(providerRequest, request)
+    // ctx.web reads the variable once at startup, from this same process environment.
+    return { providerId: this.providerId, envProvider: process.env.DSH_WEB_SEARCH_PROVIDER ?? null }
+  }
+
   private async agent(sessionId: string): Promise<Agent> {
     const found = await this.ctx.sessionController.resolveAgent(sessionId as SessionId)
     if ('error' in found) throw found.error
@@ -56,6 +67,6 @@ export class SearchConnectionsService extends TypertRemoteService {
 
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   const result = schema.safeParse(value)
-  if (!result.success) throw new RemoteError('gateway/bad-request', 'invalid search selection request', { issues: result.error.issues })
+  if (!result.success) throw new RemoteError('gateway/bad-request', 'invalid searchConnections request', { issues: result.error.issues })
   return result.data
 }

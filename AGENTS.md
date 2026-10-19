@@ -4,7 +4,7 @@ Guidance for coding agents working in this repository.
 
 ## What this is
 
-`dsh-web-search-enhanced` is a DeepSeek Harness (DSH) plugin bundle. The Host half registers the `enhanced-search` provider behind DSH's native `web_search` tool and lets every session pick its own search connection (keyless services, personal API keys, DeepSeek search, fixed search models, or the session's own model) and content freshness. The client half adds the composer search button, `/setup-search`, the plugin settings page and first-run guidance. It targets DSH `>=0.2.1-rc.2 <0.3.0` and Node `^22.19.0 || >=24.0.0`.
+`dsh-web-search-enhanced` is a DeepSeek Harness (DSH) plugin bundle. The Host half takes the native DeepSeek search provider's seat (`deepseek-official`, which the shipped `web` row already selects) behind DSH's native `web_search` tool and lets every session pick its own search connection (keyless services, personal API keys, DeepSeek search, fixed search models, or the session's own model) and content freshness. The client half adds the composer search button, `/setup-search`, the plugin settings page and first-run guidance. It targets DSH `>=0.2.1-rc.2 <0.3.0` and Node `^22.19.0 || >=24.0.0`.
 
 User docs are in Chinese: [README.md](README.md), [docs/configuration.md](docs/configuration.md), [docs/upgrading.md](docs/upgrading.md). Maintainer docs: [docs/architecture.md](docs/architecture.md), [docs/development.md](docs/development.md).
 
@@ -21,9 +21,10 @@ src/host/               DSH integration: runtime, step snapshots, selections, pa
                         follow-model, connection views, Remote service, web_search restriction
 src/client/             composer selector, /setup-search, settings page, locales
 locale/                 Plugins page metadata (zh, en)
-cordis.patch.yml        bundle patch (selects the provider, disables conflicting rows)
+cordis.patch.yml        bundle patch (disables web-search-deepseek, inserts the plugin row)
 scripts/                client build helpers, check-ui (headless Chromium), verify-package
 tests/                  Vitest specs (Host in real DSH composition; client in jsdom)
+e2e/                    end-to-end suite: real DSH install, plugin manager, Host boot, Web GUI over CDP
 ```
 
 Shared files are bundled into both halves: no Node- or browser-only APIs there.
@@ -35,7 +36,10 @@ pnpm install
 pnpm run check        # typecheck → build → test → verify:package; must pass before you finish
 pnpm exec vitest run tests/<file>.spec.ts
 pnpm run check:ui     # headless Chromium UI checks; CHROMIUM=/path/to/chromium; --screenshots <dir>
+pnpm run test:e2e     # isolated real DSH under .e2e/ (see docs/development.md); networked on first run
 ```
+
+Run `test:e2e` when touching the bundle patch, provider registration, the settings page or the DSH baseline. It never touches the user's own DSH home, profiles or running GUI.
 
 Do not run state-changing git commands unless asked. Do not edit `pnpm-lock.yaml` or add dependencies without approval.
 
@@ -70,7 +74,9 @@ Do not run state-changing git commands unless asked. Do not edit `pnpm-lock.yaml
 ## Don'ts
 
 - Don't change the shared contracts (`catalog.ts`, `settings/types.ts`, `settings/version.ts`, `remote-contract.ts`) casually: they bind the Host, the client and stored data. A breaking settings change needs a `CURRENT_CONFIG_VERSION` bump and a pure migration step.
-- Don't rename public error codes, the provider id `enhanced-search`, the Loader entry id `web-search-enhanced` or the storage domain `web_search_enhanced`.
+- Don't rename public error codes, the default provider id `deepseek-official`, the Loader entry id `web-search-enhanced` or the storage domain `web_search_enhanced`.
+- Don't make `providerId` volatile or part of the settings document: it is the one ordinary Config field, edited in the Profile only, and a change remounts the plugin to register under the new id. The browser learns it from `searchConnections/provider`.
+- Don't patch the shared `web` row (or any row another plugin relies on) in `cordis.patch.yml`: a patch replaces the row's whole config, so writing `searchProvider` drops `fetchProvider` and breaks web_fetch plugins such as dsh-web-fetch-enhanced. Take a seat the base already selects instead.
 - Don't read private DSH internals (adapter registries, pi-ai catalogs); use public services and settings.
 - Don't hard-code user-visible strings in components; the Host emits only codes and English model-facing text, never localized UI copy.
 - Don't make the provider's `available()` do I/O.

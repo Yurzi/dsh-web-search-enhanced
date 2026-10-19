@@ -4,6 +4,35 @@
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-10-19
+
+### 新增
+
+- Loader 配置 `providerId`（默认 `deepseek-official`）：与 dsh-web-fetch-enhanced 一样，可改用其他 ID，与重新启用的原生 DeepSeek 搜索共存，见[配置参考](docs/configuration.md#provider-id-与原生搜索共存)。它只能在 Profile 中修改，修改后插件重新挂载；设置页不显示也不改动它。
+- 设置页在 `web_search` 不经过本插件时给出提示：`web` 条目没有指定 `searchProvider`（会自动选择，可能报 `WEB_PROVIDER_AMBIGUOUS`）、被 DSH 自带「网页搜索」页面的开关改为 DeepSeek Search API，或指向其他 provider。判断方式与 DSH 相同，也考虑 `DSH_WEB_SEARCH_PROVIDER`。
+- `searchConnections/provider` Remote 方法：返回本插件注册的 provider ID 和 `DSH_WEB_SEARCH_PROVIDER`，供设置页判断。
+
+### 修复
+
+- 与 dsh-web-fetch-enhanced 等抓取插件同时安装时 `web_fetch` 无法正常使用：安装补丁不再改写共享的 `web` 条目。旧补丁只写 `searchProvider`，补丁整体替换条目配置，`fetchProvider: http` 随之丢失，抓取落入自动选择。
+- 设置页把某项改回默认值后，Profile 中会留下空的覆盖对象（例如关掉再打开一个服务后的 `builtin:tavily: {}`）；现在一并删除。
+
+### 开发
+
+- 新增端到端测试 `pnpm run test:e2e`（迁移自 dsh-web-fetch-enhanced）：在隔离的真实 DSH 中与 dsh-web-fetch-enhanced 一起安装，验证合成结果、Host 路由、共存配置和 Web 界面。见[开发指南](docs/development.md#端到端测试)。
+
+### 变更
+
+- 搜索 provider 的 ID 由 `enhanced-search` 改为原生 DeepSeek 搜索的 `deepseek-official`，由 base profile 的 `web.searchProvider` 直接选中。安装补丁只停用 `web-search-deepseek` 并插入本插件条目，与 dsh-web-fetch-enhanced 的做法一致。
+- 不再停用 `web-deepseek-api`：两个选择都已固定，它的 provider 只在用户显式选择时使用。
+- 如果在 Profile 中手写过 `searchProvider: enhanced-search`，或设置了 `DSH_WEB_SEARCH_PROVIDER=enhanced-search`，升级后会报 `WEB_PROVIDER_CONFIGURED_MISSING`，删除这条覆盖即可。
+
+### 升级说明
+
+- DSH 要求不变（`>=0.2.1-rc.2 <0.3.0`），设置格式仍为 version 2，会话存储不变，无需迁移。卸载旧插件后安装 0.1.10 并刷新 Web 页面；设置、密钥和会话选择都会保留。
+- 用 `link:` 安装的开发环境需要重启 DSH：热更新会替换插件代码，但不会重新读取链接包的安装补丁。
+- 如果以前改过 DSH 内置「网页搜索」页面的开关，用户层 `web` 条目中残留的 `deepseek-search-api` / `deepseek-fetch-api` 现在会让搜索和抓取改走 DeepSeek Search / Fetch API（0.1.9 时是报错）；设置页会提示，删除这两个字段即可。详见[升级指南](docs/upgrading.md)。
+
 ## [0.1.9] - 2026-10-19
 
 ### 宿主兼容性

@@ -1,21 +1,24 @@
 // @vitest-environment jsdom
+import { act } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import type { ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { V2Config } from '../src/settings/types.ts'
 import type { CredentialStates } from '../src/client/settings/credentials.ts'
+import type { SearchRoute } from '../src/client/settings/route.ts'
 import { SettingsPage, type SettingsPageProps } from '../src/client/settings/SettingsPage.tsx'
 import { bindHook, blur, byText, click, flush, observable, render, tZh, type } from './client-harness.tsx'
 
 function mountPage({ user = { version: 2 } as Record<string, unknown>, writable = true, accepted = true } = {}) {
   const settings = observable({ status: 'ready', value: user as V2Config, base: {}, user, revision: 8, writable } as ConfigFormSnapshot<V2Config>)
   const credentials = observable<CredentialStates>({ SEMANTIC_SCHOLAR_API_KEY: { configured: false, writable: true } })
+  const route = observable<SearchRoute>({ kind: 'this' })
   const mutate = vi.fn(async () => accepted)
   const saveCredential = vi.fn(async () => ({ ok: true as const, value: undefined }))
-  const props = { view: 'page', useSettings: bindHook(settings), useCredentials: bindHook(credentials), mutate, saveCredential, t: tZh } as unknown as SettingsPageProps
+  const props = { view: 'page', useSettings: bindHook(settings), useCredentials: bindHook(credentials), useRoute: bindHook(route), mutate, saveCredential, t: tZh } as unknown as SettingsPageProps
   const { container } = render(<SettingsPage {...props} />)
   const row = (name: string) => byText(container, 'li', name)!
   const configure = (name: string) => { click(row(name).querySelector('button[aria-expanded]')) }
-  return { container, mutate, saveCredential, row, configure }
+  return { container, mutate, saveCredential, row, configure, route }
 }
 
 describe('settings page', () => {
@@ -124,7 +127,8 @@ describe('settings page', () => {
     expect(confirm.textContent).toContain(tZh('custom.removeConfirm', { name: 'Work Exa' }))
     click(byText(confirm, 'button', tZh('custom.remove')))
     await flush()
-    expect(mutate).toHaveBeenCalledExactlyOnceWith([{ op: 'unset', path: ['connections', 'custom:work'] }], 8)
+    // The only connection override goes, so no empty `connections: {}` stays behind.
+    expect(mutate).toHaveBeenCalledExactlyOnceWith([{ op: 'unset', path: ['connections'] }], 8)
   })
 
   it('restores defaults after confirmation without touching keys', async () => {
@@ -135,6 +139,20 @@ describe('settings page', () => {
     await flush()
     expect(mutate).toHaveBeenCalledExactlyOnceWith([{ op: 'unset', path: ['version'] }, { op: 'unset', path: ['freshness'] }], 8)
     expect(saveCredential).not.toHaveBeenCalled()
+  })
+
+  it('says when web_search does not reach this plugin', () => {
+    const { container, route } = mountPage()
+    const notices = () => [...container.querySelectorAll('[role="status"]')].map(element => element.textContent)
+    expect(notices()).toEqual([])
+    act(() => { route.set({ kind: 'auto', providerId: 'deepseek-official' }) })
+    expect(notices()).toEqual([tZh('route.auto', { id: 'deepseek-official' })])
+    act(() => { route.set({ kind: 'other', provider: 'deepseek-search-api', providerId: 'deepseek-official' }) })
+    expect(notices()).toEqual([tZh('route.deepseekApi', { id: 'deepseek-official' })])
+    act(() => { route.set({ kind: 'other', provider: 'deepseek-official', providerId: 'enhanced-search' }) })
+    expect(notices()).toEqual([tZh('route.other', { provider: 'deepseek-official', id: 'enhanced-search' })])
+    act(() => { route.set({ kind: 'unknown' }) })
+    expect(notices()).toEqual([])
   })
 
   it('locks every control while the document awaits migration', () => {

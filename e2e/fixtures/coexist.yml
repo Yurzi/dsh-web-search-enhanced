@@ -1,0 +1,15 @@
+# The coexistence setup from docs/configuration.md: keep the native DeepSeek
+# Messages search and register this plugin beside it under another id.
+- id: web-search-deepseek
+  disabled: false
+
+- id: web-search-enhanced
+  config:
+    providerId: enhanced-search
+    defaultConnection: builtin:exa
+
+# A patch replaces the row's whole config: state both selections.
+- id: web
+  config:
+    searchProvider: enhanced-search
+    fetchProvider: http

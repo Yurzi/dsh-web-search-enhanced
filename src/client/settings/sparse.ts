@@ -68,12 +68,11 @@ function assertCurrentVersion(layers: SettingsLayers): void {
  */
 export function sparseSettingOperations(layers: SettingsLayers, path: readonly string[], target: unknown, fallback?: unknown): SettingsPathOpView[] {
   assertCurrentVersion(layers)
-  const at = (root: unknown) => path.reduce<unknown>((value, key) => objectOf(value)[key], root)
-  const inherited = at(layers.base) ?? fallback
-  const user = at(layers.user)
+  const inherited = valueAt(layers.base, path) ?? fallback
+  const user = valueAt(layers.user, path)
   const ops: SettingsPathOpView[] = []
   if (target === undefined || equal(target, inherited)) {
-    if (user !== undefined) ops.push({ op: 'unset', path: [...path] })
+    if (user !== undefined) ops.push({ op: 'unset', path: prunedPath(layers.user, path) })
   } else {
     const sparse = delta(target, inherited)
     if (!equal(sparse, user)) ops.push({ op: 'set', path: [...path], value: sparse as Settable })
@@ -83,6 +82,20 @@ export function sparseSettingOperations(layers: SettingsLayers, path: readonly s
     ops.push({ op: 'set', path: ['version'], value: CURRENT_CONFIG_VERSION })
   }
   return ops
+}
+
+function valueAt(root: unknown, path: readonly string[]): unknown {
+  return path.reduce<unknown>((value, key) => objectOf(value)[key], root)
+}
+
+/**
+ * The path to unset so no empty object stays behind: removing the only key of
+ * a user-layer object removes that object instead, up to a top-level field.
+ */
+function prunedPath(user: unknown, path: readonly string[]): string[] {
+  let end = path.length
+  while (end > 1 && Object.keys(objectOf(valueAt(user, path.slice(0, end - 1)))).length === 1) end -= 1
+  return path.slice(0, end)
 }
 
 const FIELDS = ['version', 'freshness', 'defaultConnection', 'showSelector', 'connections'] as const

@@ -1,0 +1,8 @@
+# Overlay standing in for an operator who opened 127.0.0.1 on the fetch
+# plugin's page, so a local page tells which provider served web_fetch: the
+# native provider would refuse it. A patch replaces the row's whole config.
+- id: web-fetch-enhanced
+  config:
+    allowCidrs:
+      - 127.0.0.1/32
+    userAgent: wse-e2e/1.0

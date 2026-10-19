@@ -16,6 +16,7 @@ import type { V2Config } from '../../settings/types.ts'
 import type { Translate } from '../connections.ts'
 import type { NS } from '../locales.ts'
 import type { CredentialStates } from './credentials.ts'
+import type { SearchRoute } from './route.ts'
 import type { SaveCredential } from './CredentialEditor.tsx'
 import { CustomConnectionsSection } from './CustomConnections.tsx'
 import { DefaultsSection } from './DefaultsSection.tsx'
@@ -33,6 +34,8 @@ export interface SettingsPageInjected {
     settings: ConfigForm<V2Config>
     /** Whether each referenced credential is configured. */
     credentials: ObservableSnapshot<CredentialStates>
+    /** Whether web_search reaches this plugin. */
+    route: ObservableSnapshot<SearchRoute>
   }
   mutate: (ops: readonly SettingsPathOpView[], expectedRevision: number) => Promise<boolean>
   saveCredential: SaveCredential
@@ -41,9 +44,10 @@ export interface SettingsPageInjected {
 export type SettingsPageProps =
   PropsRuntime<'plugins.bundle.config'> & InjectFace<SettingsPageInjected> & PropsLocale<typeof NS>
 
-export function SettingsPage({ useSettings, useCredentials, mutate, saveCredential, t }: SettingsPageProps) {
+export function SettingsPage({ useSettings, useCredentials, useRoute, mutate, saveCredential, t }: SettingsPageProps) {
   const snapshot = useSettings(value => value)
   const credentials = useCredentials(value => value)
+  const route = useRoute(value => value)
   if (snapshot.status === 'unavailable') return null
   if (snapshot.value === undefined || snapshot.revision === undefined) {
     return <p className={css.status} role="status"><StateDot state="ongoing" />{t('settings.loading')}</p>
@@ -60,6 +64,7 @@ export function SettingsPage({ useSettings, useCredentials, mutate, saveCredenti
     <div className={css.page}>
       <p className={css.intro}>{t('settings.intro')}</p>
       {notice === undefined ? null : <p className={css.warning} role="status">{notice}</p>}
+      <RouteNotice route={route} t={t} />
       <DefaultsSection {...sections} />
       <ServicesSection {...sections} credentials={credentials} saveCredential={saveCredential} />
       <ModelSection {...sections} />
@@ -67,6 +72,28 @@ export function SettingsPage({ useSettings, useCredentials, mutate, saveCredenti
       <ResetSection {...sections} />
     </div>
   )
+}
+
+/** Provider id of the DeepSeek Search API, which the switch on DSH's own Web search page selects. */
+const DEEPSEEK_SEARCH_API = 'deepseek-search-api'
+
+/** Says so when web_search does not reach this plugin, so nothing on this page takes effect. */
+function RouteNotice({ route, t }: { route: SearchRoute; t: Translate }) {
+  const text = routeNotice(route, t)
+  return text === undefined ? null : <p className={css.warning} role="status">{text}</p>
+}
+
+function routeNotice(route: SearchRoute, t: Translate): string | undefined {
+  switch (route.kind) {
+    case 'unknown':
+    case 'this':
+      return undefined
+    case 'auto':
+      return t('route.auto', { id: route.providerId })
+    case 'other':
+      if (route.provider === DEEPSEEK_SEARCH_API) return t('route.deepseekApi', { id: route.providerId })
+      return t('route.other', { provider: route.provider, id: route.providerId })
+  }
 }
 
 function ModelSection({ doc, write, t }: { doc: SettingsDoc; write: WriteSettings; t: Translate }) {

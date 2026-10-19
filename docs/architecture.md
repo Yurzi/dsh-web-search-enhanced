@@ -6,10 +6,10 @@
 
 插件分两半，打包为一个 DSH 插件包（bundle）：
 
-- **Host 端**（`lib/index.js`，入口 [src/index.ts](../src/index.ts)）：Loader 条目 `web-search-enhanced`。它向 DSH 的 `web` 服务注册 ID 为 `enhanced-search` 的搜索 provider，保存每个会话的选择，并提供 `searchConnections` Remote。
+- **Host 端**（`lib/index.js`，入口 [src/index.ts](../src/index.ts)）：Loader 条目 `web-search-enhanced`。它默认以原生 DeepSeek 搜索的 ID `deepseek-official` 向 DSH 的 `web` 服务注册搜索 provider（Loader 配置 `providerId` 可改），保存每个会话的选择，并提供 `searchConnections` Remote。
 - **客户端**（`lib/client.js`，入口 [src/client/index.tsx](../src/client/index.tsx)）：输入框搜索按钮、`/setup-search`、插件设置页和首次启用提示。
 
-[cordis.patch.yml](../cordis.patch.yml) 把这个 provider 设为 `web.searchProvider`，并停用两个与之冲突的内置条目（见[安装补丁](#安装补丁)）。模型看到的仍是 DSH 原生的 `web_search` 工具，参数和结果结构不变。
+base profile 的 `web.searchProvider` 本来就选中 `deepseek-official`，[cordis.patch.yml](../cordis.patch.yml) 只停用占用同一 ID 的原生条目，不改动 `web` 条目（见[安装补丁](#安装补丁)）。模型看到的仍是 DSH 原生的 `web_search` 工具，参数和结果结构不变。
 
 ## 模块
 
@@ -51,7 +51,7 @@ src/
     command.ts          /setup-search
     ActivationPrompt.tsx  首次启用提示
     selector/           输入框搜索按钮与菜单（CSS Module）
-    settings/           设置页各部分、表单模型、稀疏写入（CSS Module）
+    settings/           设置页各部分、表单模型、稀疏写入、provider 路由提示（CSS Module）
 ```
 
 标为「共用」的文件同时被 Host 和客户端打包，不能依赖 Node 或浏览器特有的 API。
@@ -64,7 +64,7 @@ agent/request（每个模型请求步骤）
        ├─ SearchSessions.current(agent)  读取或初始化会话选择（storage-domain）
        └─ planFor(selection, settings)   → off | invalid | structured | model | follow | failed
 web_search（原生调用或代码模式调用）
-  └─ enhanced-search provider.search(request, signal)
+  └─ deepseek-official provider（本插件）.search(request, signal)
        ├─ ctx.agents.currentInitiator()  找到发起调用的 Agent
        ├─ snapshots.get(agent)           取该步冻结的计划
        ├─ targetOf(plan)                 off / invalid / 跟随失败 → 抛出带错误码的 WebError
@@ -141,6 +141,7 @@ interface Adapter {
 | --- | --- | --- |
 | `searchConnections/get` | `{ sessionId }` | `SelectionView` |
 | `searchConnections/set` | `{ sessionId, connectionId?, freshness?, expectedRevision }`，至少包含 `connectionId` 或 `freshness`；`connectionId: null` 表示关闭搜索 | `SelectionView` |
+| `searchConnections/provider` | `{}` | `{ providerId, envProvider }`：本插件注册的 provider ID，以及 `DSH_WEB_SEARCH_PROVIDER` 的值（未设置为 `null`） |
 
 `SelectionView` 是 `{ selection: { connectionId, freshness, revision }, connections: ConnectionView[] }`。`ConnectionView` 包含 `id`、`label`、`kind`（`structured` / `model`）、`access`（`keyless` / `api-key` / `account`）、`status`（`ready` / `disabled` / `needs-credential` / `unsupported`）、`freshness`（该连接是否响应实时性），以及可选的 `credentialRef` 和英文 `detail`。状态只根据本地事实判断，不探测上游服务。
 
@@ -152,7 +153,7 @@ interface Adapter {
 | `searchConnections/conflict` | `expectedRevision` 与存储中的不一致 | `{}` |
 | `gateway/bad-request` | 请求不符合 schema | zod issues |
 
-两个方法都声明 `@Remote({ resources: { session: addressedSession } })`：DSH 的 Remote 访问控制按请求指向的会话资源授权（owner 总是允许），通过后再由 Session Controller（`sessionController.resolveAgent`）解析出 Agent，解析失败时返回 Session Controller 的错误。客户端用 `useAccess('searchConnections/set')` 判断能否修改，不能时菜单只读。
+`get` 和 `set` 声明 `@Remote({ resources: { session: addressedSession } })`：DSH 的 Remote 访问控制按请求指向的会话资源授权（owner 总是允许），通过后再由 Session Controller（`sessionController.resolveAgent`）解析出 Agent，解析失败时返回 Session Controller 的错误。`provider` 不涉及会话，按内置的 `global` 资源授权。客户端用 `useAccess('searchConnections/set')` 判断能否修改，不能时菜单只读。
 
 ## 客户端
 
@@ -170,17 +171,23 @@ interface Adapter {
 
 **设置页**：通过 `configForms` 读取设置的继承层与用户层，所有修改以稀疏路径操作写入，请求参数逐项自动保存；密钥只通过 `remote.credentials` 写入 DSH 凭据，从不进入设置。
 
+**provider 路由提示**：[route.ts](../src/client/settings/route.ts) 按 `ctx.web` 的规则判断 `web_search` 是否经过本插件：先看 `configForms.get('web')` 的 `searchProvider`，没有时看 `DSH_WEB_SEARCH_PROVIDER`，都没有时为自动选择。`providerId` 不是设置字段，浏览器看不到，所以它和环境变量由 `searchConnections/provider` 提供。只在设置页显示时订阅 `web` 条目并读取 Host；设置文档更新或与 Host 的连接重建后重读，因为在 Profile 中修改 `providerId` 会让插件重新挂载。结果为 `this`、`auto`、`other`（附 provider ID）或 `unknown`（`web` 条目不对本客户端可见，或 Host 还没有回答）；`auto` 和 `other` 在页面顶部给出提示，`deepseek-search-api` 单独说明是内置「网页搜索」页面的开关留下的。
+
 **样式与组件**：使用 `@deepseek-ai/dsh-client-ui-primitives` 的组件（菜单、开关、分段控件、输入框等），它是 DSH 外壳提供的平台模块，不打进插件包。样式写在 CSS Module 中，只用 DSH 的 `--dsw-*` 设计变量；构建时编译进 `lib/client.js`，每个样式表带 `data-plugin` / `data-plugin-css` 标记注入一次（[scripts/client-build.ts](../scripts/client-build.ts)）。输入栏变窄时，按钮按 container query 和 DSH 提供的 `--dsh-composer-model-text-display` 逐级收起，没有 JavaScript 测量。
 
 **文案**：所有界面文字都在 [locales.ts](../src/client/locales.ts) 的 `webSearchEnhanced` 命名空间中，zh 为主、en 完整对应；Host 只返回状态码和英文诊断，由客户端本地化。插件页显示的名称和简介来自 `locale/zh.json`、`locale/en.json` 的 `meta`。
 
 ## 安装补丁
 
-DSH 的 profile 补丁会**整体替换**目标条目的 `config`。[cordis.patch.yml](../cordis.patch.yml) 做了四件事：
+DSH 0.2.1 的 base profile 有四个 Web 相关条目：`web`（`searchProvider: deepseek-official`、`fetchProvider: http`）、`web-search-deepseek`、`web-deepseek-api` 和 `web-fetch-http`。本插件与 dsh-web-fetch-enhanced 采用同一种做法：占用 base 已经选中的 provider ID，只停用原来占用这个 ID 的原生条目。[cordis.patch.yml](../cordis.patch.yml) 做两件事：
 
-1. `web` 条目只写 `searchProvider: enhanced-search`。`fetchProvider` 因此进入自动选择，要求系统中只有一个始终可用的抓取 provider。
-2. 停用 `web-search-deepseek`（DeepSeek Messages 搜索）。它的作用由模型连接覆盖；保留它还会显示内置的「网页搜索」设置页，那个页面的开关会改写用户层的 `web` 条目，绕过本插件。
-3. 停用 `web-deepseek-api`（DeepSeek Search / Fetch API）。它的两个 provider 在没有密钥时也报告可用，会让抓取的自动选择出现 `WEB_PROVIDER_AMBIGUOUS`。DeepSeek 搜索改由 `builtin:deepseek` 连接提供。
-4. 插入 `web-search-enhanced` 条目，默认连接为 `builtin:exa`。
+1. 停用 `web-search-deepseek`（DeepSeek Messages 搜索）。它注册的也是 `deepseek-official`，同时挂载会报 `WEB_DUPLICATE_PROVIDER`。它的作用由 DeepSeek 连接和模型连接覆盖；停用后内置的「网页搜索」设置页也不再显示，那个页面的开关会改写用户层的 `web` 条目。
+2. 插入 `web-search-enhanced` 条目，默认连接为 `builtin:exa`。
 
-[tests/composition.spec.ts](../tests/composition.spec.ts) 用真实的补丁算法和 `WebRuntime` 验证这一组合，包括与 dsh-web-fetch-enhanced 以两种顺序同时安装的情况。
+**不改 `web` 条目**：profile 补丁会**整体替换**目标条目的 `config`，不做深合并。0.1.9 及以前的补丁把 `web` 写成只有 `searchProvider: enhanced-search`，`fetchProvider: http` 随之丢失，`web_fetch` 落入自动选择：dsh-web-fetch-enhanced 的路由判断和设置页提示都失效，任何额外的抓取 provider 都会让它报 `WEB_PROVIDER_AMBIGUOUS`。占用 `deepseek-official` 后，base 的两个选择原样保留，其他插件、用户层的覆盖都能与本插件组合。
+
+**providerId**：Loader 配置中唯一的普通（非 volatile）字段，默认 `deepseek-official`。Settings 不提供也不写入它，修改它会让 Loader 重新挂载插件并以新 ID 注册。需要保留原生 DeepSeek 搜索时，重新启用 `web-search-deepseek`，把 `providerId` 改为其他 ID，并在 `web` 条目中写明两个字段，见[配置参考](configuration.md#provider-id-与原生搜索共存)。
+
+**不停用 `web-deepseek-api`**：两个选择都已固定，它的 `deepseek-search-api` 和 `deepseek-fetch-api` 只在用户显式选择时使用，不会造成歧义。它的抓取 provider 属于 `web_fetch`，停用它会让选择了它的用户抓取失败，这不是搜索插件该做的决定。
+
+[tests/composition.spec.ts](../tests/composition.spec.ts) 用真实的补丁算法和 `WebRuntime` 验证这一组合：`web` 条目与 base 完全一致，与 dsh-web-fetch-enhanced 以两种顺序同时安装时搜索和抓取各自落到对应插件，用户层的显式选择仍然可用。

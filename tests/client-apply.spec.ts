@@ -11,7 +11,11 @@ async function fixture() {
   const entries = new Map<string, any>()
   const listeners = new Map<string, () => void>()
   const view = { selection: { connectionId: null, freshness: 'auto', revision: 0 }, connections: [] }
-  const search = { get: vi.fn(async () => ({ ok: true, value: view })), set: vi.fn(async () => ({ ok: true, value: view })) }
+  const search = {
+    get: vi.fn(async () => ({ ok: true, value: view })),
+    set: vi.fn(async () => ({ ok: true, value: view })),
+    provider: vi.fn(async () => ({ ok: true, value: { providerId: 'deepseek-official', envProvider: null } })),
+  }
   const form = { getSnapshot: () => ({ status: 'ready', value: {}, base: {}, user: {}, revision: 1, writable: true }), subscribe: vi.fn(() => () => {}), mutate: vi.fn(async () => true) }
   class Remote extends Service {
     constructor(c: Context) { super(c, 'remote') }
@@ -67,4 +71,16 @@ it('binds the composer seat to its session and rereads observed sessions when se
   stop()
   face.hooks.navigation.getSnapshot().openSettings()
   expect(openBundle).toHaveBeenCalledWith('dsh-web-search-enhanced')
+})
+
+it('tells the settings page whether web_search reaches the plugin and rereads after settings change', async () => {
+  const { entries, listeners, search } = await fixture()
+  const { route } = entries.get('plugins.bundle.config').inject().hooks
+  expect(search.provider).not.toHaveBeenCalled()
+  const stop = route.subscribe(() => {})
+  // The fixture serves every namespace with an empty value, so the `web` row pins no provider.
+  await vi.waitFor(() => expect(route.getSnapshot()).toEqual({ kind: 'auto', providerId: 'deepseek-official' }))
+  listeners.get('settings/document-updated')!()
+  await vi.waitFor(() => expect(search.provider).toHaveBeenCalledTimes(2))
+  stop()
 })

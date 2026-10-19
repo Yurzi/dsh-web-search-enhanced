@@ -1,6 +1,7 @@
 /**
- * The `searchConnections` Remote: per-session search selection, shared by the
- * Host service and the client. Schemas are strict at both ends.
+ * The `searchConnections` Remote: per-session search selection and the
+ * provider facts the settings page reads, shared by the Host service and the
+ * client. Schemas are strict at both ends.
  */
 import type { RemoteResult, TypertRemoteNamespace } from '@deepseek-ai/dsh-typert-protocol'
 import { createTypertRemoteInfo } from '@deepseek-ai/dsh-typert-protocol/remote-info'
@@ -46,16 +47,29 @@ export const selectionView = z.object({
   connections: z.array(connectionView),
 }).strict()
 
+export const providerRequest = z.object({}).strict()
+
+/** Facts only the Host knows about how web_search reaches this plugin. */
+export const providerView = z.object({
+  /** Id this plugin registered as a web_search provider. */
+  providerId: z.string(),
+  /** `$DSH_WEB_SEARCH_PROVIDER`, which selects the provider while the `web` row names none. */
+  envProvider: z.string().nullable(),
+}).strict()
+
 export type SelectionRequest = z.infer<typeof selectionRequest>
 export type SelectionChange = z.infer<typeof selectionChange>
 export type ConnectionStatus = typeof CONNECTION_STATUS[number]
 export type ConnectionView = z.infer<typeof connectionView>
 export type SelectionView = z.infer<typeof selectionView>
+export type ProviderRequest = z.infer<typeof providerRequest>
+export type ProviderView = z.infer<typeof providerView>
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface TypertRemoteMap {
     'searchConnections/get': (request: SelectionRequest) => Promise<RemoteResult<SelectionView>>
     'searchConnections/set': (request: SelectionChange) => Promise<RemoteResult<SelectionView>>
+    'searchConnections/provider': (request: ProviderRequest) => Promise<RemoteResult<ProviderView>>
   }
   interface TypertRemoteNamespaceMap {
     searchConnections: TypertRemoteNamespace<'searchConnections'>
@@ -84,6 +98,11 @@ export const searchConnectionsRemote = createTypertRemoteInfo({
       service: 'searchConnections', invocation: { kind: 'direct' },
       parameters: [request('SearchSelectionChange', () => selectionChange)],
       result: strict('SearchSelectionView', () => selectionView),
+    },
+    'searchConnections/provider': {
+      service: 'searchConnections', invocation: { kind: 'direct' },
+      parameters: [request('SearchProviderRequest', () => providerRequest)],
+      result: strict('SearchProviderView', () => providerView),
     },
   },
 }, z)

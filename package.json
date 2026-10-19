@@ -1,6 +1,6 @@
 {
   "name": "dsh-web-search-enhanced",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Session-scoped web search connections for DeepSeek Harness",
   "keywords": [
     "deepseek-harness",
@@ -84,6 +84,7 @@
     "build": "pnpm run clean && tsc -p tsconfig.build.json && tsdown --config tsdown.config.ts",
     "verify:package": "node scripts/verify-package.mjs",
     "check:ui": "node scripts/check-ui.mjs",
+    "test:e2e": "pnpm run build && vitest run --config vitest.e2e.config.ts",
     "check": "pnpm run typecheck && pnpm run build && pnpm run test && pnpm run verify:package",
     "prepublishOnly": "pnpm run check"
   },

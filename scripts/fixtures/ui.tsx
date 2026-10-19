@@ -18,6 +18,7 @@ import { SearchSelections, type SearchConnectionsRemote } from '../../src/client
 import { SearchSelector, type Navigation, type SearchSelectorProps } from '../../src/client/selector/SearchSelector.tsx'
 import { SettingsPage, type SettingsPageProps } from '../../src/client/settings/SettingsPage.tsx'
 import type { CredentialStates } from '../../src/client/settings/credentials.ts'
+import type { SearchRoute } from '../../src/client/settings/route.ts'
 
 const params = new URLSearchParams(location.search)
 const dictionary: Record<string, string> = params.get('lang') === 'en' ? en : zh
@@ -135,11 +136,13 @@ function settingsFixture(root: HTMLElement) {
     DEEPSEEK_API_KEY: { configured: false, writable: false },
     TEAM_SEARCH_KEY: { configured: true, writable: true },
   })
+  const route = createSnapshotStore<SearchRoute>({ kind: 'this' })
   const keys: string[] = []
   const props = {
     view: 'page',
     useSettings: bind(settings),
     useCredentials: bind(credentialStore),
+    useRoute: bind(route),
     mutate: settings.mutate,
     saveCredential: async (ref: string) => {
       keys.push(ref)
@@ -151,7 +154,7 @@ function settingsFixture(root: HTMLElement) {
   const title = dictionary === zh ? '增强网页搜索' : 'Web Search Enhanced'
   const description = dictionary === zh ? '为每个会话选择网页搜索方式。' : 'Choose how each session searches the web.'
   flushSync(() => createRoot(root).render(<DetailFrame title={title} description={description}><SettingsPage {...props} /></DetailFrame>))
-  return { writes: settings.writes, keys, settings: () => settings.getSnapshot() }
+  return { writes: settings.writes, keys, settings: () => settings.getSnapshot(), setRoute: (next: SearchRoute) => { route.set(next) } }
 }
 
 function DetailFrame({ title, description, children }: { title: string; description: string; children: ReactNode }) {

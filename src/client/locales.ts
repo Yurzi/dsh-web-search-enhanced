@@ -67,6 +67,9 @@ export const en = {
   'settings.unsupported': 'These settings were written by a newer plugin version or are malformed. Upgrade the plugin before editing them here.',
   'settings.refused': 'Not saved. The settings may have changed elsewhere; check them and try again.',
   'settings.failed': 'Not saved. Check the connection to DSH and try again.',
+  'route.auto': 'The Profile’s web row names no searchProvider, so web_search picks among all usable providers and fails when there are several; nothing on this page takes effect. Set searchProvider: {id} on the web row and keep its fetchProvider.',
+  'route.other': 'web_search is served by the provider “{provider}”, not by this plugin ({id}), so this page and each session’s search choice have no effect. Set searchProvider: {id} on the Profile’s web row.',
+  'route.deepseekApi': 'web_search is served by the DeepSeek Search API, a setting left by the switch on DSH’s built-in Web search page, so this page and each session’s search choice have no effect. Set searchProvider on the Profile’s web row back to {id}; the switch also set fetchProvider to deepseek-fetch-api, so change that back to http if needed.',
 
   'defaults.title': 'Defaults',
   'defaults.connection': 'Default connection',
@@ -299,6 +302,9 @@ export const zh: Record<LocaleKey, string> = {
   'settings.unsupported': '设置由更新版本的插件写入或格式有误。请先升级插件，再在此修改。',
   'settings.refused': '未保存：设置可能已在别处更改，请检查后重试。',
   'settings.failed': '未保存，请检查与 DSH 的连接后重试。',
+  'route.auto': 'Profile 的 web 条目没有指定 searchProvider，web_search 会在所有可用的 provider 中自动选择，存在多个时会失败，本页设置也不会生效。请在 web 条目中写明 searchProvider: {id}，并保留 fetchProvider。',
+  'route.other': 'web_search 当前由 provider「{provider}」提供，而不是本插件（{id}），本页设置和各会话的搜索选择都不会生效。请把 Profile 中 web 条目的 searchProvider 设为 {id}。',
+  'route.deepseekApi': 'web_search 当前由 DeepSeek Search API 提供，这是 DSH 内置「网页搜索」页面的开关留下的设置，本页设置和各会话的搜索选择都不会生效。请把 Profile 中 web 条目的 searchProvider 改回 {id}；开关同时把 fetchProvider 改成了 deepseek-fetch-api，需要时一并改回 http。',
 
   'defaults.title': '默认值',
   'defaults.connection': '默认连接',

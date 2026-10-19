@@ -1,6 +1,6 @@
 # 配置参考
 
-本文是 dsh-web-search-enhanced 0.1.9 全部设置的参考。日常使用只需设置页（**插件 → 已安装插件 → 增强网页搜索**）；需要手写 profile、排查问题或批量部署时再看本文。升级相关的变化见[升级指南](upgrading.md)。
+本文是 dsh-web-search-enhanced 0.1.10 全部设置的参考。日常使用只需设置页（**插件 → 已安装插件 → 增强网页搜索**）；需要手写 profile、排查问题或批量部署时再看本文。升级相关的变化见[升级指南](upgrading.md)。
 
 ## 设置存放在哪里
 
@@ -20,7 +20,7 @@
 dsh --profile web --dump-config
 ```
 
-所有字段在运行中生效，修改后不需要重启插件。不合法的修改会被拒绝保存；如果配置在别处被改坏，搜索会报 `WEB_SEARCH_CONFIG_INVALID`，普通对话不受影响。
+除 `providerId` 外，所有字段在运行中生效，修改后不需要重启插件。不合法的修改会被拒绝保存；如果配置在别处被改坏，搜索会报 `WEB_SEARCH_CONFIG_INVALID`，普通对话不受影响。
 
 ## 顶层字段
 
@@ -31,6 +31,7 @@ dsh --profile web --dump-config
 | `freshness` | `auto` / `fresh` / `realtime` | `auto` | 新会话的内容实时性，见[内容实时性](#内容实时性) |
 | `showSelector` | 布尔 | `true` | 是否在输入框显示搜索按钮。关闭后仍可用 `/setup-search` 切换 |
 | `connections` | 连接 ID → 对象 | `{}` | 内置连接的覆盖项和自定义连接 |
+| `providerId` | 字母或数字开头，最多 128 个字母、数字、`.`、`_`、`-` | `deepseek-official` | 注册到 DSH `web` 服务的搜索 provider ID，`web.searchProvider` 用它选择本插件。只能在 Profile 中修改，修改后插件重新挂载；设置页不显示也不改动它。见[provider ID 与原生搜索共存](#provider-id-与原生搜索共存) |
 
 `defaultConnection` 可以指向不存在或已停用的连接，配置仍然有效；使用它的会话搜索时会报 `WEB_SEARCH_CONNECTION_INVALID`。
 
@@ -251,6 +252,53 @@ Firecrawl 在非 `auto` 模式下只用抓取到的正文作为摘要，抓取�
 
 **配对记录**：在会话里选择一个连接（或不使用搜索）时，插件记下「当前模型 → 这个选择」。记录保存在 DSH 存储的 `web_search_enhanced` 域 `pairings` 表中，以 provider 和 model 为键；只改实时性不会更新配对。
 
+## provider ID 与原生搜索共存
+
+`web_search` 由 `web` 条目的 `searchProvider` 选择 provider；没有写时读环境变量 `DSH_WEB_SEARCH_PROVIDER`；都没有时在所有可用的 provider 中自动选择，多于一个就报 `WEB_PROVIDER_AMBIGUOUS`。
+
+| 部署方式 | 本插件 `providerId` | 原生 `web-search-deepseek` | `web.searchProvider` |
+| --- | --- | --- | --- |
+| 默认 | `deepseek-official` | 停用（安装补丁） | `deepseek-official`（base 自带，无需修改） |
+| 共存 | 另选一个，例如 `enhanced-search` | 启用 | 与 `providerId` 相同 |
+
+默认部署占用原生 DeepSeek 搜索的 ID，不改动 `web` 条目。DeepSeek 搜索可以直接用本插件的 `builtin:deepseek` 连接；只有确实要保留原生的 DeepSeek Messages 搜索（例如还要用 DSH 自带的「网页搜索」设置页）时，才在 Profile 的 `cordis.patch.yml` 中改为共存：
+
+```yaml
+# 重新启用原生 DeepSeek 搜索
+- id: web-search-deepseek
+  disabled: false
+
+# 在本插件已有的条目中加上 providerId，其他字段保持不变
+- id: web-search-enhanced
+  config:
+    providerId: enhanced-search
+    defaultConnection: builtin:exa
+
+# 补丁会整体替换 web 条目的 config：两个字段都要写，否则另一个会丢失
+- id: web
+  config:
+    searchProvider: enhanced-search
+    fetchProvider: http
+```
+
+注意：
+
+- `fetchProvider` 写实际使用的抓取 provider：DSH 自带的本地抓取和 dsh-web-fetch-enhanced 都是 `http`。
+- 两个 provider 不能注册同一个 ID。重新启用原生条目却没有改 `providerId` 时，两者之一注册失败，报 `WEB_DUPLICATE_PROVIDER`。
+- 共存时 DSH 自带的「网页搜索」页面会重新出现。它的「启用新版 Web 搜索 API」开关会改写用户层的 `web` 条目：打开时搜索改由 DeepSeek Search API 提供；关闭时写回 `deepseek-official`，指向原生搜索而不是本插件，需要再把 `searchProvider` 设为 `providerId`。
+
+### 设置页的提示
+
+`web_search` 不经过本插件时，设置页顶部会给出提示，判断方式与 DSH 相同（先看 `web.searchProvider`，再看 `DSH_WEB_SEARCH_PROVIDER`）：
+
+| 情况 | 提示 |
+| --- | --- |
+| 都没有指定 | 搜索会自动选择，存在多个可用 provider 时失败 |
+| 指定为 `deepseek-search-api` | DSH 自带「网页搜索」页面的开关留下的设置，并说明如何改回 |
+| 指定为其他 ID | 搜索由那个 provider 提供，并给出本插件的 `providerId` |
+
+出现提示时，设置页的修改和各会话在输入框中的选择都不生效。`web` 条目对当前客户端不可见时不提示。
+
 ## 错误码
 
 搜索失败时，模型收到带错误码的英文说明。插件自己的错误码：
@@ -274,12 +322,13 @@ Firecrawl 在非 `auto` 模式下只用抓取到的正文作为摘要，抓取�
 | `WEB_SEARCH_STORAGE_UNAVAILABLE` | 无法打开会话选择所在的 DSH 存储 | 下一次请求会自动重试；持续出现时检查 DSH 存储后端 |
 | `WEB_SEARCH_CONTEXT_UNAVAILABLE` | 搜索不在会话的模型请求中执行，或读取会话选择时出现意外错误 | 在对话中重新发起请求 |
 
-DSH 自身的两个相关错误码：
+DSH 自身的相关错误码：
 
 | 错误码 | 含义 | 怎么办 |
 | --- | --- | --- |
-| `WEB_PROVIDER_CONFIGURED_MISSING` | `web` 配置指向的 provider 不存在，常见于用户层残留的 `searchProvider` / `fetchProvider` 覆盖 | 见[升级指南](upgrading.md#如果改过内置的网页搜索开关) |
-| `WEB_PROVIDER_AMBIGUOUS` | 有多个可用 provider 且没有指定用哪个 | 确认本插件的安装补丁已生效（它会禁用 `web-deepseek-api`） |
+| `WEB_PROVIDER_CONFIGURED_MISSING` | `web` 配置指向的 provider 不存在，常见于用户层残留的 `searchProvider` / `fetchProvider` 覆盖，或手写过旧的 `enhanced-search` | 删除这条覆盖，见[升级指南](upgrading.md#如果改过内置的网页搜索开关) |
+| `WEB_PROVIDER_AMBIGUOUS` | `web` 条目缺少 `searchProvider` 或 `fetchProvider`，且有多个可用 provider | 本插件不改动 `web` 条目；检查其他插件或用户层是否只写了其中一个字段，`web` 条目应同时写明两者。缺少 `searchProvider` 时设置页会提示 |
+| `WEB_DUPLICATE_PROVIDER` | 两个 provider 注册了同一个 ID，常见于重新启用 `web-search-deepseek` 却没有修改 `providerId` | 停用原生条目，或按[共存](#provider-id-与原生搜索共存)改用另一个 `providerId` |
 
 在输入框菜单或 `/setup-search` 中切换连接时，还可能看到两种提示：选择已在别处更改（界面会显示最新选择），或所选连接已停用、已移除。
 

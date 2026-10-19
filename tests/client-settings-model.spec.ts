@@ -25,6 +25,14 @@ describe('sparse settings operations', () => {
     expect(sparseSettingOperations(layers, ['freshness'], 'auto', 'auto')).toEqual([{ op: 'set', path: ['freshness'], value: 'auto' }])
   })
 
+  it('removes the overrides a reverted value leaves empty, but not their siblings', () => {
+    const user = { version: 2, connections: { 'builtin:tavily': { disabled: true }, 'builtin:exa': { access: 'api-key', disabled: true } } }
+    expect(sparseSettingOperations({ user }, ['connections', 'builtin:tavily', 'disabled'], false, false)).toEqual([{ op: 'unset', path: ['connections', 'builtin:tavily'] }])
+    expect(sparseSettingOperations({ user }, ['connections', 'builtin:exa', 'disabled'], false, false)).toEqual([{ op: 'unset', path: ['connections', 'builtin:exa', 'disabled'] }])
+    const only = { version: 2, connections: { 'builtin:tavily': { disabled: true } } }
+    expect(sparseSettingOperations({ user: only }, ['connections', 'builtin:tavily', 'disabled'], false, false)).toEqual([{ op: 'unset', path: ['connections'] }])
+  })
+
   it('stores only the changed fields of an object against the inherited object', () => {
     const base = { version: 2, connections: { 'custom:one': { label: 'One', binding: { model: 'old', protocol: 'openai-responses' } } } }
     expect(sparseSettingOperations({ base }, ['connections', 'custom:one'], { label: 'One', binding: { model: 'new', protocol: 'openai-responses' } })).toEqual([

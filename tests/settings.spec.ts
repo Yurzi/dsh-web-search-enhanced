@@ -132,7 +132,7 @@ afterEach(async () => {
 })
 
 /** A real profile boot with Loader, ConfigEditor, Settings and this plugin under `entryId`. */
-async function profile(options: { legacy?: Record<string, unknown>; entryId?: string; credentials?: boolean } = {}) {
+async function profile(options: { legacy?: Record<string, unknown>; entryId?: string; credentials?: boolean; userPatch?: (ns: string) => unknown[] } = {}) {
   const home = realpathSync(mkdtempSync(join(tmpdir(), 'search-profile-')))
   cleanups.push(() => rmSync(home, { recursive: true, force: true }))
   const dir = join(home, 'profiles', 'test')
@@ -145,10 +145,11 @@ async function profile(options: { legacy?: Record<string, unknown>; entryId?: st
   writeFileSync(join(bundle, 'cordis.patch.yml'), JSON.stringify([{ insert: [
     { id: 'config-editor', name: 'cordis:editor' },
     { id: 'settings', name: 'cordis:settings' },
-    { id: 'web', name: 'cordis:web', config: { searchProvider: 'enhanced-search' } },
+    { id: 'web', name: 'cordis:web', config: { searchProvider: 'deepseek-official', fetchProvider: 'http' } },
     { id: ns, name: 'cordis:search' },
   ] }]))
   writeFileSync(join(dir, 'cordis.yml'), JSON.stringify([]))
+  if (options.userPatch) writeFileSync(join(dir, 'cordis.patch.yml'), JSON.stringify(options.userPatch(ns)))
   if (options.legacy) writeFileSync(join(home, 'settings.yaml'), JSON.stringify({ [ns]: options.legacy }))
   const context: ProfileContext = { name: 'test', startedBundles: ['test-bundle'], dir, patchPath: join(dir, 'cordis.patch.yml'), installAnchor: join(home, 'package.json'), cwd: home, home, overlays: [], telemetryDisabledEnv: undefined }
   const secrets = new Map<string, string>()
@@ -183,6 +184,18 @@ describe('settings in a real profile', () => {
     await expect(h.ctx.web.search({ query: 'q' })).rejects.toMatchObject({ code: 'WEB_SEARCH_CONTEXT_UNAVAILABLE' })
     await h.ctx.fiber.dispose()
     expect(h.form(await h.start()).value).toMatchObject({ version: 2, freshness: 'realtime' })
+  })
+
+  it('registers under the providerId the Profile names and keeps it through settings edits', async () => {
+    const h = await profile({ userPatch: ns => [
+      { id: ns, config: { providerId: 'enhanced-search' } },
+      { id: 'web', config: { searchProvider: 'enhanced-search', fetchProvider: 'http' } },
+    ] })
+    expect(h.form().value).not.toHaveProperty('providerId')
+    await h.ctx.settings.update(h.ns, { version: 2, freshness: 'fresh' }, h.form().revision)
+    expect(readFileSync(h.patchPath, 'utf8')).toMatch(/providerId: enhanced-search/u)
+    await expect(h.ctx.web.search({ query: 'q' })).rejects.toMatchObject({ code: 'WEB_SEARCH_CONTEXT_UNAVAILABLE' })
+    expect(() => plugin.Config({ providerId: 'not an id' })).toThrow()
   })
 
   it('rejects unsafe edits before they reach the profile', async () => {

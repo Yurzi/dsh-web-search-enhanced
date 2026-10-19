@@ -26,8 +26,8 @@ import type { PeerId, PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import WebRuntime from '@deepseek-ai/dsh-web'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { installSearch } from '../src/host/runtime.ts'
-import type { SelectionView } from '../src/remote-contract.ts'
+import { DEFAULT_PROVIDER_ID, installSearch } from '../src/host/runtime.ts'
+import type { ProviderView, SelectionView } from '../src/remote-contract.ts'
 import { resolveSettings } from '../src/settings/resolve.ts'
 import type { V2Config } from '../src/settings/types.ts'
 
@@ -36,6 +36,7 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
 })
 
 const SECRET = 'fixture-secret-not-a-key'
@@ -56,7 +57,8 @@ class FixturePtcRuntime extends PtcRuntime {
   }
 }
 
-async function host(options: { root?: string; mode?: 'native' | 'ptc'; storage?: boolean; config?: V2Config } = {}) {
+async function host(options: { root?: string; mode?: 'native' | 'ptc'; storage?: boolean; config?: V2Config; providerId?: string } = {}) {
+  const providerId = options.providerId ?? DEFAULT_PROVIDER_ID
   const root = options.root ?? await mkdtemp(join(tmpdir(), 'search-host-'))
   if (options.root === undefined) cleanups.push(() => rm(root, { recursive: true, force: true }))
   const ctx = new Context()
@@ -64,7 +66,8 @@ async function host(options: { root?: string; mode?: 'native' | 'ptc'; storage?:
   new Storage(ctx)
   StorageJson.apply(ctx, { root })
   if (options.storage !== false) await StorageDomain.apply(ctx, { backend: 'json' })
-  new WebRuntime(ctx, WebRuntime.Config({ searchProvider: 'enhanced-search' }))
+  // The shipped `web` row selects `deepseek-official`; a coexisting deployment selects the configured id.
+  new WebRuntime(ctx, WebRuntime.Config({ searchProvider: options.providerId ?? 'deepseek-official' }))
   new TypertRegistry(ctx)
   new Gateway(ctx, {})
 
@@ -98,13 +101,15 @@ async function host(options: { root?: string; mode?: 'native' | 'ptc'; storage?:
   await ctx.plugin(ToolWeb, { search: true, fetch: false }).await()
 
   let settings = resolveSettings(options.config ?? CONFIG)
-  const plugin = ctx.plugin({ name: 'web-search-enhanced', inject: ['web'], apply: (pluginCtx: Context) => { installSearch(pluginCtx, () => settings) } })
+  const plugin = ctx.plugin({ name: 'web-search-enhanced', inject: ['web'], apply: (pluginCtx: Context) => { installSearch(pluginCtx, () => settings, providerId) } })
   await plugin.await()
   await vi.waitFor(() => expect(ctx.get('searchConnections')).toBeDefined())
 
   const peer: PeerScope = { id: 'test-owner' as PeerId, ctx, principal: { kind: 'owner' }, interactions: 'answer', signal: new AbortController().signal, dispose: async () => {} }
   const invoke = (method: 'get' | 'set', request: Record<string, unknown>) =>
     ctx.typertGateway.invoke({ peer, namespace: 'searchConnections', method, args: { request } }) as Promise<SelectionView>
+  const provider = (request: Record<string, unknown> = {}) =>
+    ctx.typertGateway.invoke({ peer, namespace: 'searchConnections', method: 'provider', args: { request } }) as Promise<ProviderView>
   /** Start model request `step` of turn 1 for an Agent, as the agent loop does. */
   const request = async (id = 'one', step = 0) => {
     const next = vi.fn(async () => ({ provider: 'p', model: 'm' }))
@@ -124,7 +129,7 @@ async function host(options: { root?: string; mode?: 'native' | 'ptc'; storage?:
     session.append('request/context', { provider, model })
   }
   return {
-    ctx, root, agents, addAgent, invoke, request, execute, commit, authorize, credentials,
+    ctx, root, agents, addAgent, invoke, provider, request, execute, commit, authorize, credentials,
     configure: (next: V2Config) => { settings = resolveSettings(next) },
     unload: () => plugin.dispose(),
   }
@@ -183,6 +188,14 @@ describe('searchConnections Remote', () => {
     expect((await reopened.invoke('get', { sessionId: 'one' })).selection).toEqual({ ...saved, freshness: 'fresh', revision: 2 })
     expect((await reopened.invoke('get', { sessionId: 'two' })).selection).toEqual({ connectionId: 'custom:a', freshness: 'auto', revision: 0 })
   })
+
+  it('tells the settings page which provider id it registered and the environment override', async () => {
+    const h = await host()
+    await expect(h.provider()).resolves.toEqual({ providerId: 'deepseek-official', envProvider: null })
+    vi.stubEnv('DSH_WEB_SEARCH_PROVIDER', 'other-search')
+    await expect(h.provider()).resolves.toEqual({ providerId: 'deepseek-official', envProvider: 'other-search' })
+    await expect(h.provider({ sessionId: 'one' })).rejects.toMatchObject({ code: 'gateway/bad-request' })
+  })
 })
 
 describe('search through web_search', () => {
@@ -209,6 +222,16 @@ describe('search through web_search', () => {
 
     h.ctx.emit('agent/disposed', { agent: h.agents.get('one')! } as never)
     expect((await h.execute('one')).isError).toBe(true)
+  })
+
+  it('serves web_search under a configured providerId beside the native provider', async () => {
+    const fetch = exaTransport()
+    const h = await host({ providerId: 'enhanced-search' })
+    h.ctx.web.registerSearchProvider({ id: 'deepseek-official', available: () => true, search: async () => { throw new Error('native search must not run') } })
+    await h.request('one')
+    expect((await h.execute('one')).isError).toBe(false)
+    expect(urls(fetch)).toEqual(['https://a.invalid/search'])
+    await expect(h.provider()).resolves.toEqual({ providerId: 'enhanced-search', envProvider: null })
   })
 
   it("runs code-mode searches with the step's target", async () => {

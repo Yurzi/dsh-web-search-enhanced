@@ -4,7 +4,7 @@ import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-settings'
 import z from '@deepseek-ai/schemastery'
 import { FRESHNESS } from './catalog.ts'
-import { installSearch } from './host/runtime.ts'
+import { DEFAULT_PROVIDER_ID, installSearch, PROVIDER_ID_PATTERN } from './host/runtime.ts'
 import { searchError } from './search/errors.ts'
 import { migrateConfig, needsMigration } from './settings/legacy.ts'
 import { installMigrator } from './settings/migrator.ts'
@@ -33,10 +33,20 @@ export interface ConfigValues extends Omit<V2Config, 'version'> {
   searchContextSize?: string
 }
 
-export type Config = { [K in keyof ConfigValues]-?: Volatile<ConfigValues[K]> }
+/** Deployment identity, edited in the Profile only; changing it remounts the plugin. */
+export interface ConfigIdentity {
+  providerId: string
+}
 
-/** Every field is live: the settings page edits it without remounting the plugin. */
-export const Config: z<ConfigValues, Config> = z.object({
+export type Config = ConfigIdentity & { [K in keyof ConfigValues]-?: Volatile<ConfigValues[K]> }
+
+/**
+ * `providerId` is ordinary configuration, so Settings never serves or writes it.
+ * Every other field is live: the settings page edits it without remounting the plugin.
+ */
+export const Config: z<ConfigValues & Partial<ConfigIdentity>, Config> = z.object({
+  providerId: z.string().pattern(PROVIDER_ID_PATTERN).default(DEFAULT_PROVIDER_ID)
+    .description('Provider id registered in ctx.web; web.searchProvider selects it.'),
   version: z.number().volatile(),
   defaultConnection: z.string().volatile(),
   freshness: z.union(FRESHNESS).volatile(),
@@ -72,11 +82,12 @@ export function apply(ctx: Context, config: Config): void {
     settingsCtx.effect(() => settingsCtx.settings.configure({ auto: false }, ctx.fiber))
     installMigrator(settingsCtx, namespace)
   })
-  installSearch(ctx, () => currentSettings(values()))
+  installSearch(ctx, () => currentSettings(values()), config.providerId)
 }
 
-function readConfig(config: Config): ConfigValues {
-  return Object.fromEntries(Object.entries(config).map(([key, value]) => [key, value.get()]).filter(([, value]) => value !== undefined)) as ConfigValues
+/** The live settings document, without the deployment identity. */
+function readConfig({ providerId: _, ...live }: Config): ConfigValues {
+  return Object.fromEntries(Object.entries(live).map(([key, value]) => [key, value.get()]).filter(([, value]) => value !== undefined)) as ConfigValues
 }
 
 /** Legacy fields may be stored while migration is pending, but must migrate to a valid document. */

@@ -23,6 +23,7 @@ import { en, NS, zh } from './locales.ts'
 import { SearchSelections } from './selection.ts'
 import { SearchSelector, type Navigation, type SearchSelectorInjected } from './selector/SearchSelector.tsx'
 import { CredentialStatus } from './settings/credentials.ts'
+import { SearchRouteStatus, type WebSelection } from './settings/route.ts'
 import { SettingsPage, type SettingsPageInjected } from './settings/SettingsPage.tsx'
 
 export const inject = ['connection', 'slots', 'locale', 'configForms', 'remote', 'remote.credentials']
@@ -31,6 +32,8 @@ export const inject = ['connection', 'slots', 'locale', 'configForms', 'remote',
 const ENTRY = 'web-search-enhanced'
 /** The bundle's package name, which keys its Plugins page slots. */
 const PACKAGE = 'dsh-web-search-enhanced'
+/** The shared `@deepseek-ai/dsh-web` row, as DSH's own Web search page also assumes. */
+const WEB_ENTRY = 'web'
 
 export async function apply(ctx: Context): Promise<void> {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'web-search: dictionaries')
@@ -40,8 +43,9 @@ export async function apply(ctx: Context): Promise<void> {
   const credentials = new CredentialStatus(() => settings.getSnapshot().value, ctx.remote.credentials)
   ctx.effect(() => settings.subscribe(() => { credentials.refresh() }), 'web-search: credential references')
   ctx.effect(() => ctx.remote.$on('credentials/reference-updated', () => { credentials.refresh() }), 'web-search: credential states')
+  const route = new SearchRouteStatus(ctx.configForms.get<WebSelection>(WEB_ENTRY))
   const page: SettingsPageInjected = {
-    hooks: { settings, credentials: credentials.source },
+    hooks: { settings, credentials: credentials.source, route: route.source },
     mutate: (ops, revision) => settings.mutate(ops, revision),
     saveCredential: (ref, value) => ctx.remote.credentials.set(ref, value),
   }
@@ -64,12 +68,17 @@ export async function apply(ctx: Context): Promise<void> {
   const unmount = await ctx.remote.$mount(searchConnectionsRemote)
   ctx.effect(() => unmount, 'web-search: searchConnections remote')
   // The namespace exists only after $mount; reach it from its own injection scope.
-  ctx.inject(['remote.searchConnections'], scope => { mountSession(scope, settings, navigation, t) })
+  ctx.inject(['remote.searchConnections'], scope => { mountSession(scope, settings, route, navigation, t) })
 }
 
-function mountSession(ctx: Context, settings: ConfigForm<V2Config>, navigation: SnapshotStore<Navigation>, t: Translate): void {
+function mountSession(ctx: Context, settings: ConfigForm<V2Config>, route: SearchRouteStatus, navigation: SnapshotStore<Navigation>, t: Translate): void {
   const selections = new SearchSelections(ctx.remote.searchConnections)
-  const invalidate = () => { selections.invalidate() }
+  ctx.effect(() => route.attach(ctx.remote.searchConnections), 'web-search: provider facts')
+  const invalidate = () => {
+    selections.invalidate()
+    // A Profile edit may change providerId, which remounts the Host plugin.
+    route.refresh()
+  }
   // Connection status depends on settings (including LLM routes), credentials, and the Host process.
   ctx.effect(() => ctx.remote.$on('settings/document-updated', invalidate), 'web-search: settings invalidation')
   ctx.effect(() => ctx.remote.$on('credentials/reference-updated', invalidate), 'web-search: credential invalidation')

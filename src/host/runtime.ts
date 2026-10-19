@@ -1,4 +1,4 @@
-/** DSH integration: the `enhanced-search` provider, step snapshots, selections and the Remote. */
+/** DSH integration: the web_search provider, step snapshots, selections and the Remote. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
@@ -16,10 +16,18 @@ import { SearchSessions } from './selections.ts'
 import { planFor, Snapshots, type SearchPlan } from './snapshots.ts'
 import { SearchStorage } from './storage.ts'
 
-/** Provider id the bundle patch selects as `web.searchProvider`. */
-export const PROVIDER_ID = 'enhanced-search'
+/**
+ * The native DeepSeek search provider's id, registered by default. The shipped
+ * `web` row already selects it, so the bundle patch disables the native row and
+ * leaves the shared `web` row (and with it `fetchProvider`) untouched.
+ */
+export const DEFAULT_PROVIDER_ID = 'deepseek-official'
 
-export function installSearch(ctx: Context, settings: () => ResolvedSettings): void {
+/** Provider ids: a letter or digit, then up to 127 letters, digits, dots, underscores or hyphens. */
+export const PROVIDER_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u
+
+/** @param providerId - the id registered in `ctx.web`; `web.searchProvider` must select it. */
+export function installSearch(ctx: Context, settings: () => ResolvedSettings, providerId: string): void {
   const storage = new SearchStorage(ctx)
   const restriction = new SearchRestriction(ctx)
   const sessions = new SearchSessions(ctx, settings, storage, new Pairings(storage), restriction)
@@ -55,10 +63,10 @@ export function installSearch(ctx: Context, settings: () => ResolvedSettings): v
     restriction.forget(agent)
   })
 
-  ctx.inject(['sessionController', 'typert'], remoteCtx => { new SearchConnectionsService(remoteCtx, sessions) })
+  ctx.inject(['sessionController', 'typert'], remoteCtx => { new SearchConnectionsService(remoteCtx, sessions, providerId) })
 
   ctx.web.registerSearchProvider({
-    id: PROVIDER_ID,
+    id: providerId,
     available: () => true,
     async search(request: WebSearchRequest, signal?: AbortSignal): Promise<WebSearchResult> {
       // Native and code-mode calls both run under the Agent whose step requested them.
