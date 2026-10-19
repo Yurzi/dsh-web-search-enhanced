@@ -4,227 +4,160 @@
 
 # Web Search Enhanced
 
-**聊天用喜欢的模型，搜索用合适的连接。**
-
-为 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) 打造的增强型联网搜索插件。开箱即用免 Key 起步，支持在每段对话中自由搭配最适合的搜索引擎与实时性偏好。
+**为每个会话选择网页搜索方式：免密钥起步，也可以用自己的密钥、DeepSeek 搜索或模型自带的搜索。**
 
 [![Release](https://img.shields.io/github/v/release/Yurzi/dsh-web-search-enhanced?style=flat-square)](https://github.com/Yurzi/dsh-web-search-enhanced/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](LICENSE)
-[![DSH](https://img.shields.io/badge/DSH-0.2.0--rc.2%2B-536DFE?style=flat-square)](package.json)
+[![DSH](https://img.shields.io/badge/DSH-0.2.1--rc.2%2B-536DFE?style=flat-square)](package.json)
 [![Node.js](https://img.shields.io/badge/Node.js-22.19%2B%20%7C%2024%2B-green?style=flat-square)](package.json)
-
-[🚀 快速上手](#-快速上手) · [✨ 核心特性](#-核心特性) · [🔍 搜索引擎推荐](#-选哪种搜索服务) · [⚙️ 进阶配置](#️-进阶配置与个人-key) · [❓ 常见问题](#-常见问题-faq) · [📖 详细文档](#-想了解更多)
 
 </div>
 
----
+dsh-web-search-enhanced 是 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) 的插件。它接管 DSH 原生的 `web_search` 工具，让每个会话独立选择搜索连接和内容实时性；对话模型和工具调用方式都不变，`web_fetch` 也不受影响。
 
-## ✨ 核心特性
+## 特性
 
-- 🐋 **开箱即用，免 Key 起步**：无需繁琐申请 API Key，安装默认选用 Exa 免 Key 检索，同时内置 Firecrawl、Tavily 与 Tinyfish，安装即刻体验联网搜索。
-- 🔀 **搜索与聊天自由解耦**：模型聊天与联网搜索互不干扰！无论你当前在与 Claude、GPT 还是本地模型对话，都可以随时为当前会话指定最擅长该领域的搜索引擎。
-- 💬 **会话级记忆与独立分支**：每段对话都会记住各自选用的搜索服务与实时性偏好；Fork 分支对话互不冲突，各自独立调整。
-- ⚡ **内容实时性自由掌控**：在输入区一键切换「自动 / 优先新鲜 / 优先实时」，随心平衡网页检索速度与最新内容抓取。
-- 🔐 **安全优雅的凭据隔离**：深度接入 DSH 原生 Credentials 体系，敏感 API Key 安全留存于凭据管理器中，绝不污染项目配置文件。
-- 🎨 **无缝融入原生界面**：聊天输入框随手弹出的快捷切换胶囊 + 直观清爽的插件设置面板，自适应浅色/深色主题与移动端窄屏。
+- **装好就能搜**：默认使用 Exa 免密钥搜索；Firecrawl、Tavily、Tinyfish、OpenAlex 同样免密钥可用。
+- **按会话选择**：在输入框的地球按钮或 `/setup-search` 中切换，每个会话记住自己的连接和实时性，fork 出的会话之后独立变化。
+- **记住模型的搭配**：在某个模型下选过的连接，会成为该模型新会话的默认选择。
+- **多种来源**：网页搜索服务、学术检索（OpenAlex、Semantic Scholar）、DeepSeek 搜索（账号登录或 API Key）、固定的搜索模型，或跟随当前会话模型。
+- **内容实时性**：自动 / 优先新鲜 / 优先实时，Firecrawl 和 Exa（个人密钥）会据此请求较新的页面内容。
+- **密钥安全**：密钥只存放在 DSH 凭据中，设置里只保存引用名；免密钥连接从不发送你的密钥。
+- **原生界面**：使用 DSH 的组件和主题，支持深色模式和窄屏，中英文界面。
 
----
+## 截图
 
-## 📸 界面预览
-
-### 💬 会话快捷选择器（在聊天框随手切换）
-
-> 在输入框工具栏轻轻一点，即可随时为当前会话切换搜索引擎与内容实时性，无需跳转设置，不打断对话灵感。
+输入框中的搜索菜单：
 
 <p align="center">
-  <img src="docs/assets/search-picker-desktop.png" alt="会话快捷选择器" width="850" />
-</p>
-<p align="center">
-  <sub>切换视图：<b>桌面浅色（上图）</b> · <a href="docs/assets/search-picker-dark.png">桌面深色</a> · <a href="docs/assets/search-picker-narrow.png">移动窄屏</a></sub>
+  <img src="docs/assets/selector.png" alt="输入框中的搜索菜单" width="720" />
 </p>
 
-### ⚙️ 统一插件设置中心
+<p align="center"><sub><a href="docs/assets/selector-dark.png">深色模式</a> · <a href="docs/assets/selector-narrow.png">窄屏</a> · <a href="docs/assets/selector-not-ready.png">所选连接缺少密钥</a></sub></p>
 
-> 集中管理默认连接、免 Key / 个人 Key 访问模式、凭据引用与自定义模型端点。
+插件设置页：
 
 <p align="center">
-  <img src="docs/assets/settings-desktop.png" alt="插件设置中心" width="850" />
-</p>
-<p align="center">
-  <sub>切换视图：<b>桌面浅色（上图）</b> · <a href="docs/assets/settings-dark.png">桌面深色</a> · <a href="docs/assets/settings-mobile.png">移动窄屏</a></sub>
+  <img src="docs/assets/settings.png" alt="插件设置页" width="720" />
 </p>
 
----
+<p align="center"><sub><a href="docs/assets/settings-dark.png">深色模式</a> · <a href="docs/assets/settings-narrow.png">窄屏</a> · <a href="docs/assets/settings-editor.png">添加自定义连接</a></sub></p>
 
-## 🚀 快速上手
+## 安装
 
-### 环境要求
+要求 DSH `>=0.2.1-rc.2 <0.3.0`，Node.js `^22.19.0 || >=24.0.0`。
 
-- **DeepSeek Harness**：≥ `0.2.0-rc.2`
-- **Node.js**：`^22.19.0 || >=24.0.0`
-
-本版沿用 DSH 0.2.0-rc.2 基线，改进窄输入栏中的会话搜索选择器：空间不足时先收成 28px 图标，仍放不下时暂时让位，避免输入栏控件被挤到第二行（含 dsh-mobile 0.6.3+ 手机页）；新增 `/setup-search` 指令和“在输入栏显示搜索连接选择器”开关。配置格式、会话存储和搜索行为均不变（配置版本机制见[配置版本设计](docs/config-versioning.zh-CN.md)）。跟随模型仍要求 API Key；使用 pi-ai 内置 DeepSeek 目录时，请重新选择 `deepseek-flash` 并检查旧模型 overrides，本插件不会自动改名。详见[0.2.0-rc.2 影响评估](docs/upstream-0.2.0-rc.2-assessment.zh-CN.md)。升级前请备份 profile 和旧设置。
-
-### 步骤 1：安装插件
-
-**方式 A：通过 GitHub Release 离线包安装（推荐）**
-
-当前版本为 **0.1.8**，最低支持 **DSH 0.2.0-rc.2**。发布后可从 [Releases](https://github.com/Yurzi/dsh-web-search-enhanced/releases) 下载对应版本安装包及 SHA256 校验文件；也可执行 `pnpm install --frozen-lockfile && pnpm run check && pnpm pack` 自行构建。使用绝对路径安装：
+从 npm 安装：
 
 ```sh
-dsh plugin --profile web add /path/to/dsh-web-search-enhanced-0.1.8.tgz
+dsh plugin --profile web add dsh-web-search-enhanced@0.1.9
 ```
 
-**方式 B：通过 npm 在线安装**
-
-该版本发布到 npm 后，也可直接安装：
+或安装本地构建的包（例如用 `pnpm pack` 生成），路径需为绝对路径：
 
 ```sh
-dsh plugin --profile web add dsh-web-search-enhanced@0.1.8
+dsh plugin --profile web add /absolute/path/to/dsh-web-search-enhanced-0.1.9.tgz
 ```
 
-已安装旧版时，DSH rc.2 不支持直接自动升级：先备份配置和存储，再通过插件管理器移除旧版并安装 0.1.8，核对 profile 补丁与会话选择。Desktop profile 需先启动过一次桌面端。完整步骤见[升级指南](docs/migration.zh-CN.md)。
+也可以在 Web 界面的 **插件** 页安装第三方插件时填入包名 `dsh-web-search-enhanced`。安装后刷新 Web 页面。
 
-### 步骤 2：生效与刷新
+**升级**：DSH 默认开启热更新（HMR），这时不能在已安装的版本上直接再装一次，需要先卸载再安装：在插件页卸载本插件后重新安装，或执行 `dsh plugin --profile web remove dsh-web-search-enhanced` 后再 `add`。设置、密钥和各会话的选择都会保留。从 0.1.8 及更早版本升级前请先阅读[升级指南](docs/upgrading.md)。
 
-1. 重载插件或重启 DSH 服务端。
-2. 刷新浏览器 Web 页面，确保前端客户端组件与后端服务同步更新。
+## 快速上手
 
-### 步骤 3：立即提问体验
+1. 新建一个会话，直接提问，例如「搜索 TypeScript 最新版本的发布说明，总结主要变化并附上来源」。新会话默认使用 **Exa** 免密钥搜索。
+2. 想换连接或实时性：点输入框右侧的地球按钮，或输入 `/setup-search`。选择只作用于当前会话。缺少密钥的连接会注明原因，点击它可直接打开设置页。
+3. 想配置密钥、默认连接或自定义连接：打开 **插件 → 已安装插件 → 增强网页搜索**，或在搜索菜单底部点「管理搜索连接」。
 
-新建一段会话，输入框上方默认已为你准备好 **Exa · 免 Key** 搜索连接。直接向 AI 提问：
+## 搜索连接一览
 
-> 💡 **提问示例**：“搜索最近的 TypeScript 发布说明，总结最重要的几个变化并附上引用来源。”
+| 连接 | 访问方式 | 内容实时性 | 说明 |
+| --- | --- | --- | --- |
+| Exa（默认） | 免密钥 / 个人密钥 | 仅个人密钥 | 语义检索，个人密钥时返回页面正文片段，可选搜索类型 |
+| Firecrawl | 免密钥 / 个人密钥 | 两种方式都支持 | 可按国家、位置筛选；非自动模式下返回新抓取的正文 |
+| Tavily | 免密钥 / 个人密钥 | — | 可选搜索深度和主题（通用、新闻、财经） |
+| Tinyfish | 免密钥 / 个人密钥 | — | 可按地区、语言筛选；学术论文类型需要个人密钥 |
+| DeepSeek | DeepSeek 账号登录，或 `DEEPSEEK_API_KEY` | — | 使用 DeepSeek 账号登录的会话直接用账号；其他会话使用 API Key（与 DSH「模型」页共用） |
+| OpenAlex | 免密钥 / 个人密钥 | — | 开放学术图谱，附作者、引用数、开放获取链接和摘要 |
+| Semantic Scholar | 仅个人密钥 | — | 学术检索，附 TL;DR、引用数和开放获取 PDF |
+| 自定义搜索服务 | 个人密钥 | 同所用服务 | 复用以上任一服务的接口格式，可指向团队网关等自定义地址 |
+| 固定搜索模型 | 个人密钥 | — | 通过 Anthropic Messages、OpenAI Responses 或 Chat Completions 的服务端搜索工具检索 |
+| 跟随会话模型 | 会话模型的密钥 | — | 用当前会话的模型搜索；provider 配置需写明 `api`，不支持 OAuth 和订阅登录 |
 
-AI 会自动通过 Web Search Enhanced 检索最新网络资料，并附带网页来源回答你！
+免密钥连接使用服务的公共接口，额度与其他用户共享，可能因网络或高峰被拒绝或限流。完整的参数、地址和规则见[配置参考](docs/configuration.md)。
 
----
+## 内容实时性
 
-## 🔍 选哪种搜索服务？
+搜索菜单中的「内容实时性」按会话保存：
 
-Web Search Enhanced 内置了多种主流检索服务与模型搜索能力，你可以按需随心选择：
+- **自动**：使用服务的默认行为，最快。
+- **优先新鲜**：优先使用 24 小时内的缓存内容。
+- **优先实时**：重新抓取页面，适合刚发生的新闻、行情等。
 
-| 搜索连接         | 推荐场景                        | 访问模式                       | 特点说明                                                                          |
-| :--------------- | :------------------------------ | :----------------------------- | :-------------------------------------------------------------------------------- |
-| **Exa** _(默认)_ | 💻 开发者、技术文档、论文研究   | 免 Key (开箱即用) / 个人 Key   | 强大的语义神经检索，对编程与深度学术内容理解极准；个人 Key 支持配置搜索类型       |
-| **Firecrawl**    | 📰 新闻资讯、深度文章抓取       | 免 Key (开箱即用) / 个人 Key   | 擅长清洗和抓取干净的 Markdown 网页正文；支持优先获取最新页面                      |
-| **Tavily**       | 🔍 事实核查、行业调研、综合检索 | 免 Key (开箱即用) / 个人 Key   | 专为大语言模型打造的搜索服务，支持自定义搜索深度（快速/进阶）与新闻主题           |
-| **Tinyfish**     | 🌍 跨语言搜索、地域本地化资讯   | 免 Key (开箱即用) / 个人 Key   | 支持按国家地区、特定语言和搜索用途精准过滤检索范围                                |
-| **OpenAlex**     | 📚 学术论文、开源文献、引用检索 | 免 Key (开箱即用) / 个人 Key   | 全球开放学术图谱，自动解析摘要倒排索引、作者、OA PDF 与引用数；支持 mailto 礼貌池 |
-| **Semantic Scholar** | 🔬 深度学术、论文速读、AI 论文 | 需配置个人 API Key             | 专为学术科研打造，内置 TL;DR 速读总结、引用计数与 ArXiv/OA 论文直链               |
-| **专用搜索模型** | 🤖 统一使用特定支持联网的模型   | Anthropic / OpenAI 协议        | 通过服务端搜索能力（如 OpenAI Responses、Anthropic Messages）直接返回带引用的回答 |
-| **跟随会话模型** | 🔄 懒人模式，搜索使用当前模型   | 需配置 provider 的 `apiKeyEnv` | 自动沿用当前会话选定的模型与端点发起联网搜索                                      |
+只有 Firecrawl 和 Exa（个人密钥）会据此调整请求；选中其他连接时，菜单中的实时性选项不可用。实时性控制的是内容缓存，不是按发布日期筛选；越新的内容通常越慢、消耗越多额度。
 
-> 💡 **关于免 Key 访问**：
-> 免 Key 模式走的是上游提供的公共接入通道，省去了新用户申请注册 API Key 的繁琐步骤。
-> 公共通道可能因高峰期并发或网络 IP 受限；如遇限流，可以在输入框临时切换到其他免 Key 连接（如 Tavily / Firecrawl），或者在设置中配置自己的专属 API Key。
+## 密钥与凭据
 
----
+在设置页对应服务的配置中填入密钥并保存，密钥写入 DSH 凭据（例如 `EXA_API_KEY`），不会出现在设置文件里。保存密钥后还需把该服务的访问方式切换为个人密钥，插件不会自动切换。
 
-## ⏱️ 内容实时性说明
+DSH 0.2.1 起，凭据存储中的值优先于环境变量。如果你习惯用环境变量提供密钥，而凭据存储中已有同名的旧值，环境变量不会生效。
 
-在聊天输入框的搜索菜单中，你可以为当前会话设置**内容实时性**：
+## 常见问题
 
-- **自动 (Auto)**：采用搜索引擎默认的缓存与检索策略，响应快速。
-- **优先新鲜 (Fresh)**：优先使用不超过 24 小时的较新网页缓存（Firecrawl / Exa 个人 Key 支持）。
-- **优先实时 (Realtime)**：发起重新爬取，获取页面当前时刻的最新内容（适合突发新闻、最新行情等时效极高的场景）。
+### 搜索报 WEB_SEARCH_NOT_SELECTED
 
-_注：实时抓取可能会稍微增加检索耗时与额度消耗；对于不支持实时性控制的连接，系统会自动保留偏好并优雅回退至默认检索。_
+当前会话在搜索菜单中选择了「不使用搜索」。点输入框的地球按钮或输入 `/setup-search`，选择一个连接即可。新会话的默认连接可在设置页修改。
 
----
+### 免密钥搜索失败或被限流
 
-## ⚙️ 进阶配置与个人 Key
+`WEB_KEYLESS_UNAVAILABLE` 表示服务拒绝了来自你所在网络的匿名访问，`WEB_PROVIDER_RATE_LIMITED` 表示限流。先在菜单里换一个免密钥连接；经常遇到时，为常用服务配置个人密钥并切换访问方式。
 
-如果你拥有各平台专属的 API Key，或想要自定义专用搜索模型，只需打开 **设置 → 插件 → Web Search Enhanced**：
+### 保存了密钥，搜索仍然是免密钥
 
-1. **绑定个人 API Key**：
-   - 找到目标连接（例如 Firecrawl 或 Tavily）。
-   - 点击目标连接行上的“配置 Key”，在行内展开的输入框中填写 API Key 并保存（将自动存入 DSH Credentials，安全可靠）。
-   - 将“访问方式”从“免 Key”切换为“个人 Key”。OpenAlex 的个人 Key 会按官方要求通过 api_key 查询参数发送。
-2. **配置 OpenAlex 礼貌邮箱（可选）**：
-   - 在 OpenAlex 连接行点击“礼貌邮箱”，行内填写联系邮箱；清空后保存即可恢复默认公共标识。
-3. **设置新会话默认连接**：
-   - 在“新会话默认连接”下拉框中选择你最常用的引擎，新创建的对话将自动应用该偏好。
-4. **添加自定义模型或端点**：
-   - 支持添加任意兼容 OpenAI 或 Anthropic 服务端搜索协议的模型端点。
+保存密钥不会改变访问方式，这是为了避免意外消耗付费额度。在设置页该服务的配置中把访问方式切换为个人密钥。
 
-完整配置语法与高级参数白名单，请参阅 📖 [详细配置指南](docs/configuration.zh-CN.md)。
+### 修改会影响其他会话吗？fork 出的会话呢？
 
----
+不会。每个会话单独保存连接和实时性。fork 出的会话第一次使用时继承父会话当时的选择，之后两边各自修改，互不影响。
 
-## ❓ 常见问题 (FAQ)
+### 窗口很窄时，搜索按钮只剩一个图标
 
-<details>
-<summary><b>Q1: 搜索时提示 <code>WEB_SEARCH_NOT_SELECTED</code>？</b></summary>
+输入栏空间不足时，按钮先隐藏实时性，再隐藏连接名，最后只保留地球图标，点开后的菜单不变。也可以随时用 `/setup-search` 切换。按钮只有在设置中关闭「在输入框显示搜索按钮」时才会完全隐藏。
 
-**原因**：当前会话没有选定任何搜索连接。  
-**解决办法**：在输入框右侧工具栏点击搜索图标/胶囊（或在输入框输入 `/setup-search`），在弹出的菜单中勾选任意一个搜索服务（如 Exa 或 Firecrawl）；或者在插件设置中为“新会话默认连接”指定一个默认引擎。
-</details>
+### 内置的“网页搜索”设置页不见了，搜索报 WEB_PROVIDER_CONFIGURED_MISSING
 
-<details>
-<summary><b>Q2: 免 Key 搜索突然提示失败或限流（<code>WEB_KEYLESS_UNAVAILABLE</code> / <code>WEB_PROVIDER_RATE_LIMITED</code>）？</b></summary>
+本插件的安装补丁停用了 DSH 自带的 `web-search-deepseek` 和 `web-deepseek-api`，所以 **插件 → 内置插件配置 → 网页搜索** 页面不再显示。DeepSeek 搜索可以改用本插件的 DeepSeek 连接。
 
-**原因**：免 Key 服务基于上游公共节点，高峰时段或特定网络 IP 可能触发临时频率限制。  
-**解决办法**：
+如果以前在那个页面打开或关闭过「启用新版 Web 搜索 API」，用户配置的 `web` 条目中会残留 `searchProvider` / `fetchProvider`，指向已停用的 provider，于是搜索或抓取报 `WEB_PROVIDER_CONFIGURED_MISSING`。用 `dsh --profile web --dump-config` 查看 `web` 条目，删除用户层中的这两个字段即可。
 
-1. 在会话输入框中快速切换到另一个免 Key 引擎（如从 Exa 换到 Firecrawl 或 Tavily）。
-2. 在设置中为该引擎填入你自己的官方 API Key，并将访问方式切换为“个人 Key”。
+### 跟随会话模型报 WEB_SEARCH_FOLLOW_UNSUPPORTED
 
-</details>
+插件无法从模型配置推导出搜索路由，错误信息会写明缺少什么。最常见的原因是 provider 配置没有写 `api`。DSH 自带的 DeepSeek 路由不支持跟随，请改用 DeepSeek 连接。规则见[配置参考](docs/configuration.md#跟随会话模型)。
 
-<details>
-<summary><b>Q3: 我在设置中填了 API Key，为什么搜索依然是免 Key 模式？</b></summary>
+## 文档
 
-**原因**：为了防止意外产生付费额度消耗，插件设计了“显式切换保护”——保存 Key 并不会自动切换通道。  
-**解决办法**：在设置页该连接的卡片上，将下拉选项由 **免 Key** 手动切换为 **个人 Key (API Key)** 即可。
-</details>
+| 文档 | 内容 |
+| --- | --- |
+| [配置参考](docs/configuration.md) | 所有字段、内置连接、参数白名单、自定义连接、跟随模型规则、错误码 |
+| [升级指南](docs/upgrading.md) | 版本对应关系、升级到 0.1.9 的变化、旧配置迁移、回退 |
+| [架构](docs/architecture.md) | 模块划分、请求流程、如何新增搜索服务 |
+| [开发](docs/development.md) | 本地开发、测试、在真实 DSH 中验证、发布 |
+| [更新日志](CHANGELOG.md) | 各版本的变化 |
+| [AGENTS.md](AGENTS.md) | 给编码代理的仓库说明（英文） |
 
-<details>
-<summary><b>Q4: 我在会话中修改了搜索引擎，会影响其他会话吗？Fork 对话呢？</b></summary>
+## 开发
 
-**不会**。Web Search Enhanced 是完全**会话隔离**的：
+```sh
+pnpm install
+pnpm run check
+```
 
-- 修改当前会话的搜索连接，不会影响已经存在的其他会话。
-- Fork（分支）出的新会话在首次初始化时继承父会话当前搜索设置，之后两者独立变更；不重建历史 fork 切点的搜索设置。
+详见[开发指南](docs/development.md)。
 
-</details>
+## 许可与致谢
 
-<details>
-<summary><b>Q5: 窗口很窄时，输入框里的搜索图标不见了？</b></summary>
-
-**原因**：输入栏放不下所有控件时，插件会先把选择器收成图标；连图标也放不下时，为避免控件被挤到第二行，选择器会暂时隐藏（桌面与手机页相同）。若在设置中关闭了“在输入栏显示搜索连接选择器”（`showSelector: false`），选择器始终不显示。当前会话的搜索设置不受影响，照常生效。  
-**解决办法**：在输入框输入 `/setup-search`，即可切换当前会话的搜索连接与实时性；把窗口或侧栏拉宽一点，图标也会自动回来。出错、正在保存或所选连接不可用时，选择器始终显示。
-</details>
-
-<details>
-<summary><b>Q6: 如何从 0.0.x 旧版本平滑升级？</b></summary>
-
-升级后重新加载插件或重启 DSH，插件会在启动时自动检测并迁移旧版全局模型配置；迁移成功后映射为新版连接配置。若出现迁移错误，请检查宿主日志、DSH Credentials 权限和旧配置，再重启插件。详细注意事项请参阅 📖 [升级指南](docs/migration.zh-CN.md)。
-</details>
-
----
-
-## 📖 想了解更多？
-
-| 文档                                                     | 适合谁读            | 主要内容                                                          |
-| :------------------------------------------------------- | :------------------ | :---------------------------------------------------------------- |
-| 📘 **[配置指南](docs/configuration.zh-CN.md)**           | 所有用户 / 进阶用户 | 完整参数列表、凭据机制、高级 options 白名单、自定义端点与排错字典 |
-| 📙 **[升级指南](docs/migration.zh-CN.md)**               | 从旧版升级的老用户  | 0.2.0-rc.2 宿主适配、旧版导入指引、升级踩坑预防                        |
-| 📗 **[架构设计说明](docs/design-v2.converged.zh-CN.md)** | 开发者 / 架构爱好者 | 会话状态隔离、请求快照机制、多适配器与安全性设计                  |
-| 🛠️ **[开发与验证文档](docs/v2-implementation.zh-CN.md)** | 插件二次开发者      | 本地构建、单元测试、浏览器环境验证与打包发布                      |
-| 📝 **[更新日志](CHANGELOG.md)**                          | 所有人              | 版本演进记录与历史变更                                            |
-
----
-
-## 💬 问题反馈
-
-如果在使用过程中遇到问题，欢迎前往 [GitHub Issues](https://github.com/Yurzi/dsh-web-search-enhanced/issues) 提交反馈。  
-_提示：提 issue 时请附上 DSH 版本、插件版本及报错简述，并请注意**脱敏**，切勿粘贴个人 API Key 或私密对话内容。_
-
----
-
-## 🤝 致谢与许可
-
-- 本项目代码遵循 [MIT](LICENSE) 开源协议。
-- 衷心感谢 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 团队及各搜索服务（Exa、Firecrawl、Tavily、Tinyfish 等）的开发者。
+- 代码以 [MIT](LICENSE) 许可发布。
+- 感谢 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 团队，以及 Exa、Firecrawl、Tavily、Tinyfish、OpenAlex、Semantic Scholar 等服务。
 - **关于横幅形象**：Banner 中的 DeepSeek 鲸鱼娘形象来源于 **上善无形原创角色与 ZipZipPipe 二创**；本项目横幅基于用户提供的参考图经 AI 辅助创作。角色与参考作品的著作权利均归原作者所有，不因本项目代码的 MIT 许可而获得再授权，亦不代表官方背书。
+
+问题反馈请到 [GitHub Issues](https://github.com/Yurzi/dsh-web-search-enhanced/issues)，附上 DSH 与插件版本；不要粘贴密钥或私密对话。

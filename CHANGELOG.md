@@ -4,6 +4,50 @@
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-10-19
+
+### 宿主兼容性
+
+- 只支持 DSH `>=0.2.1-rc.2 <0.3.0`；所有 DSH peer 依赖改为同一范围，开发依赖固定到 0.2.1-rc.2。
+- DSH 0.2.1 默认开启热更新，已安装时需先卸载再安装新版本，见[升级指南](docs/upgrading.md)。
+- 设置格式仍为 version 2，会话存储域仍为 `web_search_enhanced` v1（新增 `pairings` 表），无需格式迁移。
+
+### 新增
+
+- DeepSeek 搜索连接 `builtin:deepseek`：使用 DeepSeek 账号登录的会话直接用账号授权，其他会话使用 `DEEPSEEK_API_KEY`（与 DSH「模型」页共用）。
+- 输入框菜单列出缺少密钥或当前不可用的连接并注明原因，点击即打开插件设置页；所选连接不可用时在菜单顶部说明并提供设置入口。
+- 插件页显示插件图标与中英文简介；首次启用时提示免密钥可用的服务和设置入口。
+- 新的文档：[配置参考](docs/configuration.md)、[升级指南](docs/upgrading.md)、[架构](docs/architecture.md)、[开发指南](docs/development.md) 和 [AGENTS.md](AGENTS.md)。
+
+### 改进
+
+- 输入框按钮和菜单改用 DSH 原生组件，样式与模型选择器一致；关闭搜索的选项改为「不使用搜索」；所选连接不响应实时性时，实时性选项不可用。
+- 窄输入栏改为纯 CSS 逐级收起：先隐藏实时性，再隐藏连接名，最窄时只保留地球图标。
+- 设置页用 DSH 组件重做：每项修改自动保存且只写差异；参数按当前访问方式显示；自定义连接改为表单编辑，`custom:` 前缀固定，凭据引用按 ID 建议（如 `CUSTOM_WORK_SEARCH_API_KEY`），可顺便填入密钥，只有非官方地址需要确认信任；移除自定义连接和「恢复默认设置」前需要确认。
+- 所有界面文字提供完整的中文和英文，中文统一使用「密钥」。
+- 跟随会话模型只读取 DSH 公开的模型配置，支持模型自己的 `api` 与 `baseURL`；不支持时说明具体原因。
+- 模型与连接的配对记录改存 DSH 存储，随 DSH 数据一起保存。
+- 搜索 provider 通过 DSH 找到发起调用的会话，原生调用和代码模式调用使用同一步冻结的搜索计划。
+
+### 变更与移除
+
+- 跟随会话模型要求 provider 配置显式写出 `api`，不再借助 pi-ai 内置目录补齐；DSH 自带的 DeepSeek 路由不能跟随，请改用 DeepSeek 连接。
+- 不再读取 `$DSH_HOME/cache/web-search-enhanced/model-connections.json`，各模型的配对记录从空开始。
+- 输入栏空间不足时不再隐藏搜索按钮；只有关闭「在输入框显示搜索按钮」时才隐藏。
+- 移除 0.0.x 单一路由时代的编程接口：`createProvider`、`resolveConfig`、`EnhancedSearchProvider`、`DEFAULT_*` 常量等。
+- 合并并重写文档，删除旧的 `docs/*.zh-CN.md` 与历史上游评估文档；npm 包不再包含 `docs/`。
+
+### 修复
+
+- 在 DSH 0.2.1 上 `web_fetch` 报 `WEB_PROVIDER_AMBIGUOUS`：安装补丁停用 `web-deepseek-api`，抓取回到唯一的本地 HTTP 实现，与 dsh-web-fetch-enhanced 同时安装时也成立。
+- 点击搜索菜单时输入框会抢走焦点：菜单改为挂在页面顶层。
+
+### 升级说明
+
+- 先把 DSH 升级到 0.2.1-rc.2 或更新的 0.2.x，再卸载旧插件并安装 0.1.9，刷新 Web 页面。设置、密钥和会话选择都会保留。
+- 如果以前改过 DSH 内置「网页搜索」页面的开关，删除用户层 `web` 条目中残留的 `searchProvider` / `fetchProvider`。
+- 回退到 0.1.8 及更早版本需要同时回退 DSH，并先删除 DeepSeek 连接相关的设置。详见[升级指南](docs/upgrading.md)。
+
 ## [0.1.8] - 2026-10-12
 
 ### 窄输入栏适配
@@ -30,7 +74,7 @@
 - 迁移保留已有连接、实时性偏好与显式默认连接；修复跟随会话模式迁移丢失连接配置的问题。
 - 迁移执行中收到配置修改会重新读取最新 revision，继续使用宿主 CAS 提交，避免丢失更新；保留先保存 Credentials、后提交配置的可重试顺序。
 - 客户端编辑与重置拒绝未迁移或未来版本，补充版本判定、输入不变、幂等、真实宿主重启及并发迁移回归。
-- 新增[配置版本设计](docs/config-versioning.zh-CN.md)，说明扩展步骤、失败恢复与跨服务事务边界。
+- 新增配置版本设计文档，说明扩展步骤、失败恢复与跨服务事务边界（现已并入[架构](docs/architecture.md#设置与版本迁移)）。
 
 ### 升级说明
 
@@ -43,7 +87,7 @@
 
 - 最低宿主版本提升至 `0.2.0-rc.2`；所有 DSH peer 依赖下限改为 `^0.2.0-rc.2`，直接开发依赖固定到 rc.2，同步更新锁文件和预发布白名单。
 - Zod 最低版本保持与上游一致的 `^4.4.3`，开发依赖树统一锁定 `4.4.3`，增加跨包 schema 类型一致性和发行包契约检查，避免依赖漂移被误判为 API 破坏。Cordis / Schemastery 的上游版本未变。
-- 增加 pi-ai 新 DeepSeek Flash ID 的跟随模型回归，验证被移除的目录 ID 不会被自动改名，显式私有路由保持原模型 ID。新增 [rc.2 影响评估](docs/upstream-0.2.0-rc.2-assessment.zh-CN.md)。
+- 增加 pi-ai 新 DeepSeek Flash ID 的跟随模型回归，验证被移除的目录 ID 不会被自动改名，显式私有路由保持原模型 ID。
 - 配置 version 2、会话 Storage Domain version 1 保持不变，无需新增迁移；升级指南明确先卸载旧插件再安装，并重载服务端、刷新 Web 页面。CI 和发布均显式使用冻结锁文件。
 
 ### 会话搜索选择器
@@ -58,7 +102,7 @@
 - 最低宿主版本提升至 `0.2.0-rc.1`；所有 DSH peer 依赖同步改为 `^0.2.0-rc.1`，直接开发依赖固定到该版本，更新锁文件、预发布白名单和发布包契约断言。
 - 核对搜索 Provider、设置 / 插槽、会话与工具恢复、Schedule 拆包、原生命令和遥测变更；无需修改搜索业务代码或安装补丁。新增真实宿主配置继承、修改、重启及恢复默认的回归测试。
 - 明确原生 DeepSeek 搜索新增的账号认证不会自动用于本插件：跟随模型仍要求可解析的 API Key 路由，结构化与固定连接保持独立。
-- 设置格式 version 2、会话 Storage Domain version 1 不变；从 0.1.4 升级无需新迁移，重载服务端后刷新 Web 页面。详见 [0.2.0-rc.1 影响评估](docs/upstream-0.2.0-rc.1-assessment.zh-CN.md)。
+- 设置格式 version 2、会话 Storage Domain version 1 不变；从 0.1.4 升级无需新迁移，重载服务端后刷新 Web 页面。
 
 ## [0.1.4] - 2026-09-24
 
@@ -67,7 +111,7 @@
 - 最低宿主版本提升至 `0.1.7-rc.2`；DSH peer 依赖下限、精确开发依赖、锁文件及预发布安装白名单同步对齐。
 - 核对动态工具更新、DeepSeek Provider 拆包、模型选择校验、Schedule 与审批变更；插件不调用 selectModel，不依赖被移除的 Schedule API，无需修改搜索运行时代码。
 - 跟随模型仍仅支持可解析的 API Key 路由，不因宿主支持官方账号而自动支持账号 / OAuth 搜索；固定连接及结构化搜索不受模型选择校验影响。
-- 设置格式 version 2、会话 Storage Domain version 1 保持不变；完整边界见 [rc.2 影响评估](docs/upstream-0.1.7-rc.2-assessment.zh-CN.md)。
+- 设置格式 version 2、会话 Storage Domain version 1 保持不变。
 
 ### 搜索选择器请求优化
 
@@ -151,7 +195,7 @@
 - 前后端契约同时更新：升级后重新加载插件或重启宿主，并刷新页面。
 - 主开发线使用 `main`；旧 0.0.x 主线保留于 `legacy/v0.0.x`。
 
-详见[升级指南](docs/migration.zh-CN.md)。
+详见[升级指南](docs/upgrading.md)。
 
 ## [0.0.6] - 2026-09-11
 

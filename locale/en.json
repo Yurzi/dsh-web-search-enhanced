@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Web Search Enhanced",
+    "description": "Choose how each session searches the web: keyless Exa, Firecrawl, Tavily, Tinyfish and OpenAlex, your own API keys, DeepSeek search, or the search tool of the session model."
+  }
+}

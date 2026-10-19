@@ -1,32 +1,38 @@
 import { readFileSync } from 'node:fs'
 import { isBuiltin } from 'node:module'
-import { fileURLToPath } from 'node:url'
 import { defineConfig, type UserConfig } from 'tsdown'
+import { clientDeps, cssModules } from './scripts/client-build.ts'
 
-const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { name: string; peerDependencies?: Record<string, string> }
-const id = pkg.name
-const clientPeers = Object.keys(pkg.peerDependencies ?? {}).filter(name => name !== '@deepseek-ai/schemastery')
-const isClientExternal = (dependency: string): boolean => clientPeers.some(peer => dependency === peer || dependency.startsWith(peer + '/'))
-const yamlBrowserPath = fileURLToPath(import.meta.resolve('yaml')).replace(/dist[\/\\]index\.js$/, 'browser/index.js')
+const { name: id, version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { name: string; version: string }
+const mode = process.env.NODE_ENV ?? 'production'
+const isHostExternal = (dependency: string): boolean => isBuiltin(dependency) || dependency.startsWith('@deepseek-ai/')
 
 const host: UserConfig = {
   name: id,
   entry: { index: 'lib/types/index.js' },
   outDir: 'lib', format: ['esm'], platform: 'node', target: 'node22', fixedExtension: false, dts: false, clean: false,
-  deps: {
-    neverBundle: value => isBuiltin(value) || value.startsWith('node:') || value.startsWith('@deepseek-ai/'),
-    alwaysBundle: value => !isBuiltin(value) && !value.startsWith('node:') && !value.startsWith('@deepseek-ai/'),
-  },
+  deps: { neverBundle: isHostExternal, alwaysBundle: dependency => !isHostExternal(dependency) },
+  define: { __PLUGIN_VERSION__: JSON.stringify(version) },
 }
+
+/**
+ * Browser half in the DSH client module format: one script that registers a
+ * `factory(require)` with `window.__ModuleLoader__`. Only the shell's platform
+ * modules stay external; CSS Modules compile into the bundle and inject
+ * tagged styles (see deepseek-harness packages/client/tsdown.client.ts).
+ */
 const client: UserConfig = {
-  name: id + '/client', entry: { client: 'lib/types/client/index.js' }, outDir: 'lib', format: ['cjs'], platform: 'browser', target: 'es2024', dts: false, clean: false, sourcemap: true,
-  alias: { yaml: yamlBrowserPath },
-  deps: { neverBundle: dependency => isClientExternal(dependency), alwaysBundle: dependency => isClientExternal(dependency) ? undefined : true, onlyBundle: false },
+  name: id + '/client',
+  entry: { client: 'src/client/index.tsx' },
+  outDir: 'lib', format: ['cjs'], platform: 'browser', target: 'es2024', dts: false, clean: false, sourcemap: true,
+  deps: clientDeps,
+  inputOptions: { resolve: { conditionNames: [mode === 'development' ? 'development' : 'production', 'browser', 'import', 'module', 'default'] } },
   define: {
-    'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV ?? 'production'),
-    'import.meta.env.MODE': JSON.stringify(process.env.NODE_ENV ?? 'production'),
-    'import.meta.env': JSON.stringify({ MODE: process.env.NODE_ENV ?? 'production' }),
+    'process.env.NODE_ENV': JSON.stringify(mode),
+    'import.meta.env.MODE': JSON.stringify(mode),
+    'import.meta.env': JSON.stringify({ MODE: mode }),
   },
+  plugins: [cssModules(id)],
   outputOptions: {
     entryFileNames: 'client.js',
     banner: 'window.__ModuleLoader__.load({ id: ' + JSON.stringify(id) + ', factory: (require) => {',
@@ -34,4 +40,5 @@ const client: UserConfig = {
     intro: 'var module = { exports: {} }; var exports = module.exports;',
   },
 }
+
 export default defineConfig([host, client])

@@ -1,15 +1,29 @@
 name: ci
+
 on:
   push:
+    branches: [main]
   pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22', '24']
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/setup@v2
         with:
-          runtime: node@latest
+          runtime: node@${{ matrix.node }}
           cache: true
       - run: pnpm install --frozen-lockfile
       - run: pnpm run check

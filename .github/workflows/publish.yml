@@ -1,35 +1,25 @@
-name: Publish to npm
+name: publish
 
 on:
   push:
-    tags:
-      - "v*"
+    tags: ['v*']
 
 permissions:
   contents: read
   id-token: write
 
 jobs:
-  build-and-publish:
+  publish:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Setup pnpm and Node.js
-        uses: pnpm/setup@v2
+      - uses: actions/checkout@v7
+      - uses: pnpm/setup@v2
         with:
           runtime: node@22
           cache: true
-
-      - name: Install locked dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Verify release tag
-        run: node --input-type=module -e 'import { readFileSync } from "node:fs"; const pkg = JSON.parse(readFileSync("package.json", "utf8")); if (process.env.GITHUB_REF_NAME !== "v" + pkg.version) throw new Error("Release tag does not match package version")'
-
-      - name: Check types, build, tests and packed contract
-        run: pnpm run check
-
-      - name: Publish to npm
-        run: pnpm publish --access public --no-git-checks --provenance
+      - run: pnpm install --frozen-lockfile
+      - name: Tag matches package version
+        run: test "${GITHUB_REF_NAME}" = "v$(node -p 'require("./package.json").version')"
+      - run: pnpm run check
+      # prepublishOnly would repeat the check above.
+      - run: pnpm publish --access public --no-git-checks --provenance --ignore-scripts

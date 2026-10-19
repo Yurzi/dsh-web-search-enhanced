@@ -1,16 +1,29 @@
-# Select the enhanced provider for DSH's stable model-facing web_search tool.
-# Leave fetchProvider unset so WebRuntime auto-selects the sole active fetch
-# provider (native http or any third-party fetch plugin like dsh-web-fetch-enhanced).
+# Bundle patch layered over the shipped base profile.
+#
+# A patch replaces the whole `config` of the row it targets, so this `web` row
+# keeps only `searchProvider`; `fetchProvider` falls back to auto-selection of
+# the single usable fetch provider. That holds only while no other always-usable
+# provider is mounted, hence the two rows disabled below. Fetch plugins that
+# leave the `web` row alone (e.g. dsh-web-fetch-enhanced) compose with this one.
 - id: web
   config:
     searchProvider: enhanced-search
 
-# Avoid registering two implementations under separate selectable ids by default.
+# DeepSeek Messages search (`deepseek-official`). Its role is covered by this
+# plugin's model connections; keeping it would also show the built-in Web search
+# settings page whose switch rewrites `web` in the user layer.
 - id: web-search-deepseek
+  disabled: true
+
+# DeepSeek Search / Fetch API (`deepseek-search-api`, `deepseek-fetch-api`). Both
+# report available() even without a key, which makes fetch auto-selection
+# ambiguous. DeepSeek search stays reachable as the `builtin:deepseek` connection.
+- id: web-deepseek-api
   disabled: true
 
 - insert:
     - id: web-search-enhanced
       name: dsh-web-search-enhanced
       config:
-        defaultConnection: builtin:exa # Explicit zero-key default for new Sessions; never replaces a saved selection.
+        # Zero-key default for new Sessions; never replaces a saved selection.
+        defaultConnection: builtin:exa

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "增强网页搜索",
+    "description": "为每个会话选择网页搜索方式：免 Key 的 Exa、Firecrawl、Tavily、Tinyfish 和 OpenAlex，个人 API Key，DeepSeek 搜索，或会话模型自带的搜索工具。"
+  }
+}

@@ -1,0 +1,33 @@
+/* Fixture shell: replicas of the DSH composer row (ui-conversation InputBar,
+   ui-model-selection ModelSelect) and the Plugins page detail frame
+   (ui-plugin-manager), with readable class names. Not shipped. */
+* { box-sizing: border-box; }
+body { margin: 0; font-family: var(--dsw-font-family); font-size: 14px; line-height: 22px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); }
+#result { display: none; }
+
+.frame { position: absolute; left: 16px; right: 16px; bottom: 32px; max-width: 760px; margin: 0 auto; }
+.card { width: 100%; border-radius: var(--dsw-radius-panel); background: var(--dsw-specific-input-major, var(--dsw-alias-bg-layer-1)); --dsw-elevation-stroke-color: var(--dsw-alias-border-l2); box-shadow: var(--dsw-elevation-soft); display: flex; flex-direction: column; gap: 12px; padding-top: 8px; }
+.input { min-height: 52px; padding: 4px 8px 0 14px; color: var(--dsw-alias-label-caption); }
+.row { flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; min-width: 0; padding: 2px 8px 6px; display: flex; container-type: inline-size; }
+.row[data-model-compact] { --dsh-composer-model-text-display: none; --dsh-composer-model-icon-display: block; }
+.tools, .modes, .trailing, .standardControls { align-items: center; min-width: 0; display: flex; gap: 12px; }
+.trailing { flex: none; margin-left: auto; }
+@container (width <= 560px) { .tools, .modes, .trailing, .standardControls { gap: 8px; } }
+.add { background: var(--dsw-specific-selector, var(--dsw-alias-interactive-bg-hover)); width: 28px; height: 28px; color: inherit; border: none; border-radius: 999px; corner-shape: round; display: grid; place-items: center; padding: 0; }
+.mode { display: flex; align-items: center; gap: 4px; height: 28px; padding: 0 4px 0 8px; border: none; border-radius: var(--dsw-radius-sm); background: transparent; color: var(--dsw-alias-label-secondary); }
+.primary { background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary-foreground); border: none; border-radius: 999px; corner-shape: round; width: 34px; height: 34px; display: grid; place-items: center; padding: 0; }
+.modelRoot { min-width: 0; position: relative; }
+.modelTrigger { border-radius: var(--dsw-radius-sm); min-width: 0; max-width: min(360px, 45cqw); height: 28px; color: var(--dsw-alias-label-secondary); background: none; border: none; display: flex; align-items: center; gap: 4px; padding: 0 4px 0 8px; font: inherit; font-size: 13px; line-height: 20px; }
+.modelLabel, .modelEffort { text-overflow: ellipsis; white-space: nowrap; min-width: 0; overflow: hidden; display: var(--dsh-composer-model-text-display, block); }
+.modelEffort { flex-shrink: 1000; color: var(--dsw-alias-label-caption); }
+.modelIcon { display: var(--dsh-composer-model-icon-display, none); flex: none; }
+
+.page { display: flex; flex-direction: column; align-items: center; padding: 28px clamp(24px, 4vw, 48px) 48px; }
+.page > * { width: 100%; max-width: 960px; }
+.detail { display: flex; flex-direction: column; gap: 8px; }
+.detailTitle { margin: 0; font-size: 20px; line-height: 28px; font-weight: 600; }
+.detailName { margin: 0; }
+.detailName code { font-family: var(--ds-font-family-code); font-size: 12px; color: var(--dsw-alias-label-tertiary); }
+.detailDesc { margin: 0; color: var(--dsw-alias-label-secondary); font-size: 14px; line-height: 22px; }
+.detailSections { display: flex; flex-direction: column; gap: 32px; margin-top: 24px; }
+.detailSection { display: flex; flex-direction: column; gap: 12px; }

@@ -1,46 +1,42 @@
+/**
+ * Pack the plugin into a temporary directory and check what users install:
+ * required artifacts are present, nothing else ships, and the manifest
+ * declares the Host contract the Loader and the plugin market read.
+ */
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { readFileSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, join } from 'node:path'
+import { join } from 'node:path'
 
-const env = {
-  ...process.env,
-  npm_config_cache: join(tmpdir(), 'npm-cache'),
-  PNPM_HOME: join(tmpdir(), 'pnpm-home'),
-  XDG_DATA_HOME: join(tmpdir(), 'pnpm-data'),
-  XDG_STATE_HOME: join(tmpdir(), 'pnpm-state'),
-  XDG_CONFIG_HOME: join(tmpdir(), 'pnpm-config'),
-}
-// Verification must never overwrite or remove an existing release artifact.
-const dir = mkdtempSync(join(tmpdir(), 'dsh-web-search-enhanced-'))
+const REQUIRED = ['package.json', 'lib/index.js', 'lib/client.js', 'lib/types/index.d.ts', 'cordis.patch.yml', 'locale/en.json', 'locale/zh.json', 'icon.svg', 'README.md', 'LICENSE']
+const ALLOWED = /^(?:package\.json|README\.md|CHANGELOG\.md|LICENSE|cordis\.patch\.yml|icon\.svg|locale\/[a-z-]+\.json|lib\/(?:index\.js|client\.js(?:\.map)?|types\/.+\.d\.ts))$/u
+
+const dir = mkdtempSync(join(tmpdir(), 'dsh-web-search-enhanced-pack-'))
 try {
-  let tarball
-  try {
-    const pack = JSON.parse(execFileSync('pnpm', ['pack', '--json', '--pack-destination', dir], { encoding: 'utf8', env }))
-    tarball = pack.filename ?? pack[0]?.filename
-  } catch {
-    const pack = JSON.parse(execFileSync('npm', ['pack', '--json', '--pack-destination', dir], { encoding: 'utf8', env }))
-    tarball = pack.filename ?? pack[0]?.filename ?? Object.values(pack)[0]?.filename
-  }
-  assert.ok(tarball, 'pack did not report a tarball')
-  execFileSync('tar', ['-xzf', join(dir, basename(tarball)), '-C', dir])
-  const pkg = JSON.parse(readFileSync(join(dir, 'package/package.json'), 'utf8'))
-  for (const path of ['lib/index.js', 'lib/client.js', 'lib/types/index.d.ts', 'cordis.patch.yml']) {
-    assert.ok(readFileSync(join(dir, 'package', path)).length > 0, 'missing packed artifact: ' + path)
-  }
+  const output = JSON.parse(execFileSync('npm', ['pack', '--json', '--pack-destination', dir], {
+    encoding: 'utf8', env: { ...process.env, npm_config_cache: join(dir, '.npm') },
+  }))
+  // npm <= 11 prints an array of reports, npm >= 12 an object keyed by package name.
+  const [report] = Array.isArray(output) ? output : Object.values(output)
+  const files = report.files.map(file => file.path)
+  for (const path of REQUIRED) assert.ok(files.includes(path), 'missing packed file: ' + path)
+  const unexpected = files.filter(path => !ALLOWED.test(path))
+  assert.deepEqual(unexpected, [], 'unexpected packed files')
+
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
   assert.equal(pkg.dsh.bundle.patch, './cordis.patch.yml')
-  assert.equal(pkg.engines.dsh, '>=0.2.0-rc.2')
+  assert.equal(pkg.dsh.client.platform, 'web')
+  assert.match(pkg.engines.dsh, /^>=\S+ <\S+$/u, 'engines.dsh needs a lower and an upper bound')
   for (const [name, range] of Object.entries(pkg.peerDependencies)) {
-    if (name.startsWith('@deepseek-ai/dsh-')) assert.equal(range, '^0.2.0-rc.2', name)
+    if (name.startsWith('@deepseek-ai/dsh-')) assert.equal(range, pkg.engines.dsh, name + ' must follow engines.dsh')
   }
-  for (const [name, version] of Object.entries(pkg.devDependencies)) {
-    if (name.startsWith('@deepseek-ai/dsh-')) assert.equal(version, '0.2.0-rc.2', name)
+  assert.equal(pkg.dependencies, undefined, 'runtime dependencies are bundled into lib/')
+  for (const locale of ['en', 'zh']) {
+    const { meta } = JSON.parse(readFileSync(new URL('../locale/' + locale + '.json', import.meta.url), 'utf8'))
+    assert.ok(meta?.title && meta?.description, 'locale/' + locale + '.json needs meta.title and meta.description')
   }
-  assert.equal(pkg.dependencies.zod, '^4.4.3')
-  assert.ok(pkg.dsh.client.inject.includes('@deepseek-ai/dsh-client-ui-plugin-manager'))
-  assert.ok(pkg.dsh.client.inject.includes('@deepseek-ai/dsh-client-ui-session'))
-  console.log('packed plugin contract verified:', basename(tarball))
+  console.log('packed ' + report.filename + ': ' + files.length + ' files, ' + Math.round(report.size / 1024) + ' KiB')
 } finally {
   rmSync(dir, { recursive: true, force: true })
 }
