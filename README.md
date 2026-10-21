@@ -13,6 +13,13 @@
 
 </div>
 
+> [!IMPORTANT]
+> **本仓库已归档，不再维护。** 开发已迁到 [Yurzi/dsh-tool-web-enhanced](https://github.com/Yurzi/dsh-tool-web-enhanced)。npm 包名 `dsh-web-search-enhanced` 不变，0.2.0 起由新仓库发布，作为 [dsh-tool-web-enhanced-profile](https://www.npmjs.com/package/dsh-tool-web-enhanced-profile) 的一部分安装，不再单独安装。
+>
+> 从 0.1.x 升级：先在同一个 profile 里移除本插件（`dsh plugin --profile <profile> remove dsh-web-search-enhanced`），再安装 `dsh-tool-web-enhanced-profile`。0.1.x 的设置不会被读取或迁移：设置页会提示并提供“恢复默认设置”；会话的连接选择与模型记忆照常可用。详见[从 0.1.x 升级](https://github.com/Yurzi/dsh-tool-web-enhanced#从-01x-升级)。
+>
+> 下文描述的是 0.1.x，仅供存档。
+
 dsh-web-search-enhanced 是 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) 的插件。它接管 DSH 原生的 `web_search` 工具，让每个会话独立选择搜索连接和内容实时性；对话模型和工具调用方式都不变，`web_fetch` 也不受影响。
 
 ## 特性
